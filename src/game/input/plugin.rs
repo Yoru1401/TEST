@@ -1,15 +1,10 @@
-use crate::game::input::actions::PlayerAction;
-use bevy::prelude::*;
-use leafwing_input_manager::prelude::*;
+use crate::game::input::PlayerAction;
+use leafwing_input_manager::prelude::InputManagerPlugin;
 
 pub struct InputPlugin;
 
-impl Plugin for InputPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_plugins(InputManagerPlugin::<PlayerAction>::default());
+impl InputPlugin {
+    pub fn build(self) -> InputManagerPlugin<PlayerAction> {
+        InputManagerPlugin::<PlayerAction>::default()
     }
-}
-
-pub mod actions {
-    pub use super::super::PlayerAction;
 }

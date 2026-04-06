@@ -1,6 +1,6 @@
-use bevy::prelude::States;
+use crate::prelude::States;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, States)]
+#[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum GameState {
     #[default]
     MainMenu,

@@ -1,25 +1,27 @@
-use bevy::prelude::*;
-use leafwing_input_manager::prelude::*;
-use serde::{Deserialize, Serialize};
+use crate::prelude::{KeyCode, Reflect};
+use leafwing_input_manager::prelude::{Actionlike, InputMap};
 
-#[derive(Actionlike, Clone, Copy, Debug, Hash, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+#[derive(Actionlike, Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
 pub enum PlayerAction {
     MoveForward,
     MoveBackward,
     MoveLeft,
     MoveRight,
     Jump,
-    SpawnCube,
 }
 
 impl PlayerAction {
-    pub fn direction_vector(&self) -> Option<Vec2> {
-        match self {
-            PlayerAction::MoveForward => Some(Vec2::Y),
-            PlayerAction::MoveBackward => Some(-Vec2::Y),
-            PlayerAction::MoveLeft => Some(-Vec2::X),
-            PlayerAction::MoveRight => Some(Vec2::X),
-            _ => None,
-        }
+    pub fn input_map() -> InputMap<Self> {
+        InputMap::new([
+            (Self::MoveForward, KeyCode::KeyW),
+            (Self::MoveForward, KeyCode::ArrowUp),
+            (Self::MoveBackward, KeyCode::KeyS),
+            (Self::MoveBackward, KeyCode::ArrowDown),
+            (Self::MoveLeft, KeyCode::KeyA),
+            (Self::MoveLeft, KeyCode::ArrowLeft),
+            (Self::MoveRight, KeyCode::KeyD),
+            (Self::MoveRight, KeyCode::ArrowRight),
+            (Self::Jump, KeyCode::Space),
+        ])
     }
 }
