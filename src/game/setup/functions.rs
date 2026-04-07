@@ -1,8 +1,10 @@
 use crate::game::camera::components::CameraMarker;
 use crate::game::input::PlayerAction;
-use crate::game::player::components::{Motor, PlayerMarker};
-use crate::prelude::*;
+use crate::game::player::abilities::JumpAbilityState;
+use crate::game::player::components::PlayerMarker;
+use crate::game::player::systems::{CharacterMotor, InputSource};
 use avian3d::prelude::{Collider, LockedAxes, RigidBody};
+use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
 
 pub fn setup_playground(
@@ -12,6 +14,7 @@ pub fn setup_playground(
 ) {
     commands.spawn((
         Name::new("Ground"),
+        RigidBody::Static,
         Collider::cuboid(20.0, 0.5, 20.0),
         Mesh3d(meshes.add(Cuboid::new(20.0, 0.5, 20.0))),
         MeshMaterial3d(materials.add(StandardMaterial::from_color(Color::srgb(0.3, 0.5, 0.3)))),
@@ -24,12 +27,14 @@ pub fn setup_playground(
         RigidBody::Dynamic,
         Collider::sphere(0.5),
         LockedAxes::ROTATION_LOCKED,
-        Motor::default(),
+        CharacterMotor::default(),
+        InputSource::PlayerControlled,
+        JumpAbilityState::default(),
         PlayerAction::input_map(),
         ActionState::<PlayerAction>::default(),
         Mesh3d(meshes.add(Sphere::new(0.5))),
         MeshMaterial3d(materials.add(StandardMaterial::from_color(Color::srgb(0.8, 0.2, 0.2)))),
-        Transform::from_xyz(0.0, 5.0, 0.0),
+        Transform::from_xyz(0.0, 3.0, 0.0),
     ));
 
     commands.spawn((

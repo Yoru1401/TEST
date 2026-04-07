@@ -1,169 +1,291 @@
-use crate::prelude::*;
 use avian3d::prelude::*;
+use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
 
 use crate::game::camera::components::CameraMarker;
 use crate::game::input::PlayerAction;
 use crate::game::states::GameState;
 
-use super::components::{Motor, PlayerMarker};
+use super::abilities::{JumpAbilityState, JumpAbilityType};
+use super::components::PlayerMarker;
+
+#[derive(Component)]
+pub struct CharacterMotor {
+    pub is_grounded: bool,
+    pub target_height_above_ground: f32,
+    pub desired_movement: Vec3,
+    pub desired_horizontal_speed: f32,
+    pub charges: i32,
+    pub spring_disabled_timer: f32,
+}
+
+impl Default for CharacterMotor {
+    fn default() -> Self {
+        Self {
+            is_grounded: false,
+            target_height_above_ground: 1.5,
+            desired_movement: Vec3::ZERO,
+            desired_horizontal_speed: 8.0,
+            charges: 1,
+            spring_disabled_timer: 0.0,
+        }
+    }
+}
+
+#[derive(Component)]
+pub enum InputSource {
+    PlayerControlled,
+    AiControlled(Vec3),
+}
+
+#[derive(Resource, Default)]
+pub struct JumpInfo {
+    pub jump_type: super::abilities::JumpAbilityType,
+    pub charges: i32,
+}
 
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
-            Update,
-            (motor_ground_probe, motor_hover, motor_move, player_jump),
+            PreUpdate,
+            (
+                update_spring_timer,
+                probe_for_ground,
+                calculate_desired_movement,
+            )
+                .chain(),
         );
+
+        app.add_systems(PreUpdate, apply_forces);
     }
 }
 
-fn motor_ground_probe(
-    spatial_query: SpatialQuery,
-    mut motor_q: Query<(Entity, &Transform, &mut Motor), With<PlayerMarker>>,
+const PROBE_SPHERE_RADIUS: f32 = 0.3;
+const GROUND_PROBE_DISTANCE: f32 = 2.0;
+
+const HOVER_SPRING_STRENGTH: f32 = 120.0;
+const HOVER_DAMPING: f32 = 12.0;
+const MOVEMENT_ACCELERATION: f32 = 30.0;
+const MAX_MOVEMENT_FORCE: f32 = 15.0;
+
+const JUMP_IMPULSE: f32 = 8.0;
+const SPRING_DISABLE_TIME: f32 = 0.15;
+
+fn update_spring_timer(
+    time: Res<Time>,
+    mut character_query: Query<&mut CharacterMotor, With<PlayerMarker>>,
 ) {
-    let Ok((entity, transform, mut motor)) = motor_q.single_mut() else {
+    let Ok(mut motor) = character_query.single_mut() else {
         return;
     };
 
-    let config = ShapeCastConfig {
-        max_distance: motor.hover_height + 0.5,
-        ..default()
-    };
-    let filter = SpatialQueryFilter::default().with_excluded_entities([entity]);
+    if motor.spring_disabled_timer > 0.0 {
+        motor.spring_disabled_timer -= time.delta_secs();
+    }
+}
 
-    let hit = spatial_query.cast_shape(
-        &Collider::sphere(0.3),
-        transform.translation,
+fn probe_for_ground(
+    spatial_query: SpatialQuery,
+    mut character_query: Query<
+        (Entity, &Transform, &mut CharacterMotor),
+        (With<PlayerMarker>, With<InputSource>),
+    >,
+) {
+    let Ok((character_entity, character_transform, mut character_motor)) =
+        character_query.single_mut()
+    else {
+        return;
+    };
+
+    let shape_cast_max_distance =
+        character_motor.target_height_above_ground + GROUND_PROBE_DISTANCE;
+    let shape_cast_config = ShapeCastConfig::from_max_distance(shape_cast_max_distance);
+    let shape_cast_filter =
+        SpatialQueryFilter::default().with_excluded_entities([character_entity]);
+
+    let ground_check_hit = spatial_query.cast_shape(
+        &Collider::sphere(PROBE_SPHERE_RADIUS),
+        character_transform.translation,
         Quat::IDENTITY,
         Dir3::NEG_Y,
-        &config,
-        &filter,
+        &shape_cast_config,
+        &shape_cast_filter,
     );
 
-    let was_grounded = motor.grounded;
-    motor.grounded = hit.is_some();
+    let was_grounded = character_motor.is_grounded;
+    character_motor.is_grounded = ground_check_hit.is_some();
 
-    if motor.grounded && !was_grounded {
-        motor.jumps_remaining = motor.max_jumps;
+    if character_motor.is_grounded && !was_grounded {
+        character_motor.charges = 1;
     }
 }
 
-fn motor_hover(
-    time: Res<Time>,
-    spatial_query: SpatialQuery,
-    mut q: Query<(Entity, &Transform, &mut LinearVelocity, &Motor), With<PlayerMarker>>,
-) {
-    let Ok((entity, transform, mut linvel, motor)) = q.single_mut() else {
-        return;
-    };
-
-    if !motor.grounded {
-        linvel.0.y -= 9.81 * time.delta_secs();
-        return;
-    }
-
-    let config = ShapeCastConfig {
-        max_distance: motor.hover_height * 2.0,
-        ..default()
-    };
-    let filter = SpatialQueryFilter::default().with_excluded_entities([entity]);
-
-    if let Some(hit) = spatial_query.cast_shape(
-        &Collider::sphere(0.3),
-        transform.translation,
-        Quat::IDENTITY,
-        Dir3::NEG_Y,
-        &config,
-        &filter,
-    ) {
-        let error = motor.hover_height - hit.distance;
-        let spring_strength = 120.0;
-        let damping = 18.0;
-        let vertical_vel = linvel.0.y;
-
-        let spring_force = error * spring_strength - vertical_vel * damping;
-        linvel.0.y += spring_force * time.delta_secs();
-    }
-}
-
-fn player_jump(
+fn calculate_desired_movement(
     state: Res<State<GameState>>,
-    mut player_query: Query<(&mut Motor, &mut LinearVelocity), With<PlayerMarker>>,
-    action_state_query: Query<&ActionState<PlayerAction>>,
+    mut character_query: Query<(&mut CharacterMotor, &InputSource), With<PlayerMarker>>,
+    camera_query: Query<&Transform, With<CameraMarker>>,
+    action_state_query: Query<&ActionState<PlayerAction>, With<PlayerMarker>>,
 ) {
     if state.get() != &GameState::Playground {
         return;
     }
 
-    let Ok(action_state) = action_state_query.single() else {
+    let Ok((mut character_motor, input_source)) = character_query.single_mut() else {
         return;
     };
 
-    if action_state.just_pressed(&PlayerAction::Jump) {
-        let Ok((mut motor, mut linvel)) = player_query.single_mut() else {
-            return;
-        };
-
-        if motor.jumps_remaining > 0 {
-            linvel.0.y = 8.0;
-            motor.jumps_remaining -= 1;
+    let horizontal_movement = match input_source {
+        InputSource::PlayerControlled => {
+            let Ok(camera_transform) = camera_query.single() else {
+                return;
+            };
+            let Ok(action_state) = action_state_query.single() else {
+                return;
+            };
+            calculate_horizontal_input(action_state, camera_transform)
         }
+        InputSource::AiControlled(ai_direction) => *ai_direction,
+    };
+
+    let vertical_movement = if character_motor.is_grounded {
+        0.0
+    } else {
+        -9.81
+    };
+
+    character_motor.desired_movement = Vec3::new(
+        horizontal_movement.x,
+        vertical_movement,
+        horizontal_movement.z,
+    );
+}
+
+fn calculate_horizontal_input(
+    action_state: &ActionState<PlayerAction>,
+    camera_transform: &Transform,
+) -> Vec3 {
+    let camera_forward = camera_transform.forward().normalize_or_zero();
+    let camera_right = camera_transform.right().normalize_or_zero();
+
+    let forward_flat = Vec3::new(camera_forward.x, 0.0, camera_forward.z).normalize();
+    let right_flat = Vec3::new(camera_right.x, 0.0, camera_right.z).normalize();
+
+    let mut movement_input = Vec3::ZERO;
+
+    if action_state.pressed(&PlayerAction::MoveForward) {
+        movement_input += forward_flat;
+    }
+    if action_state.pressed(&PlayerAction::MoveBackward) {
+        movement_input -= forward_flat;
+    }
+    if action_state.pressed(&PlayerAction::MoveLeft) {
+        movement_input -= right_flat;
+    }
+    if action_state.pressed(&PlayerAction::MoveRight) {
+        movement_input += right_flat;
+    }
+
+    if movement_input.length() > 0.01 {
+        movement_input.normalize()
+    } else {
+        Vec3::ZERO
     }
 }
 
-const MOVE_SPEED: f32 = 8.0;
-
-fn motor_move(
-    time: Res<Time>,
-    mut q: Query<(&mut LinearVelocity, &mut Motor), With<PlayerMarker>>,
-    camera: Query<&Transform, With<CameraMarker>>,
-    action_state_query: Query<&ActionState<PlayerAction>>,
+fn apply_forces(
+    state: Res<State<GameState>>,
+    spatial_query: SpatialQuery,
+    mut character_query: Query<
+        (Entity, &Transform, &mut CharacterMotor, Forces),
+        (With<PlayerMarker>, With<InputSource>),
+    >,
+    mut jump_info: ResMut<JumpInfo>,
+    jump_state_query: Query<&JumpAbilityState, With<PlayerMarker>>,
+    action_state_query: Query<&ActionState<PlayerAction>, With<PlayerMarker>>,
 ) {
-    let Ok(cam_transform) = camera.single() else {
+    if state.get() != &GameState::Playground {
+        return;
+    }
+
+    let Ok((character_entity, character_transform, mut character_motor, mut forces)) =
+        character_query.single_mut()
+    else {
         return;
     };
-    let Ok((mut linvel, mut motor)) = q.single_mut() else {
-        return;
-    };
-    let Ok(action_state) = action_state_query.single() else {
-        return;
-    };
 
-    let forward = cam_transform.forward().normalize_or_zero();
-    let right = cam_transform.right().normalize_or_zero();
+    let jump_state = jump_state_query.single().ok();
+    let action_state = action_state_query.single().ok();
 
-    let mut move_dir = Vec2::ZERO;
+    jump_info.jump_type = jump_state
+        .map(|s| s.current_type)
+        .unwrap_or(JumpAbilityType::Normal);
+    jump_info.charges = character_motor.charges;
 
-    if action_state.pressed(&PlayerAction::MoveForward) {
-        move_dir.y += 1.0;
-    }
-    if action_state.pressed(&PlayerAction::MoveBackward) {
-        move_dir.y -= 1.0;
-    }
-    if action_state.pressed(&PlayerAction::MoveLeft) {
-        move_dir.x -= 1.0;
-    }
-    if action_state.pressed(&PlayerAction::MoveRight) {
-        move_dir.x += 1.0;
+    let current_velocity = forces.linear_velocity();
+    let current_velocity_y = current_velocity.y;
+    let current_horizontal_velocity = Vec3::new(current_velocity.x, 0.0, current_velocity.z);
+    let desired_movement = character_motor.desired_movement;
+    let is_grounded = character_motor.is_grounded;
+    let spring_disabled_timer = character_motor.spring_disabled_timer;
+    let target_height = character_motor.target_height_above_ground;
+    let desired_horizontal_speed = character_motor.desired_horizontal_speed;
+
+    let mut jump_force_applied = false;
+
+    if let (Some(action_state), Some(_jump_state)) = (action_state, jump_state) {
+        if action_state.just_pressed(&PlayerAction::Jump) && character_motor.charges > 0 {
+            jump_force_applied = true;
+            character_motor.spring_disabled_timer = SPRING_DISABLE_TIME;
+            character_motor.charges -= 1;
+            forces.apply_linear_impulse(Vec3::Y * JUMP_IMPULSE);
+        }
     }
 
-    if move_dir.length() > 0.1 {
-        move_dir = move_dir.normalize();
-        let cam_relative = move_dir.x * right.xz() + move_dir.y * forward.xz();
-        motor.desired_velocity = Vec3::new(cam_relative.x, linvel.0.y, cam_relative.y) * MOVE_SPEED;
+    let spring_force = if is_grounded && spring_disabled_timer <= 0.0 && !jump_force_applied {
+        let shape_cast_config = ShapeCastConfig {
+            max_distance: target_height * 2.0,
+            ..default()
+        };
+        let shape_cast_filter =
+            SpatialQueryFilter::default().with_excluded_entities([character_entity]);
+
+        if let Some(ground_hit) = spatial_query.cast_shape(
+            &Collider::sphere(PROBE_SPHERE_RADIUS),
+            character_transform.translation,
+            Quat::IDENTITY,
+            Dir3::NEG_Y,
+            &shape_cast_config,
+            &shape_cast_filter,
+        ) {
+            let height_error = target_height - ground_hit.distance;
+            let spring = height_error * HOVER_SPRING_STRENGTH;
+            let damping = -current_velocity_y * HOVER_DAMPING;
+            Vec3::Y * (spring + damping)
+        } else {
+            Vec3::ZERO
+        }
     } else {
-        motor.desired_velocity = Vec3::new(0.0, linvel.0.y, 0.0);
+        Vec3::ZERO
+    };
+
+    let desired_velocity = desired_movement * desired_horizontal_speed;
+    let velocity_error = desired_velocity - current_horizontal_velocity;
+    let mut acceleration_force = velocity_error * MOVEMENT_ACCELERATION;
+
+    let horizontal_force_magnitude = Vec2::new(acceleration_force.x, acceleration_force.z).length();
+    if horizontal_force_magnitude > MAX_MOVEMENT_FORCE {
+        let scale = MAX_MOVEMENT_FORCE / horizontal_force_magnitude;
+        acceleration_force.x *= scale;
+        acceleration_force.z *= scale;
     }
 
-    let accel = 60.0;
-    let current = linvel.0;
-    let target = motor.desired_velocity;
+    let movement_force = Vec3::new(
+        acceleration_force.x,
+        desired_movement.y * 2.0,
+        acceleration_force.z,
+    );
 
-    let delta = target - current;
-    let accel_step = accel * time.delta_secs();
-    let accel_vec = delta.clamp_length_max(accel_step);
-
-    linvel.0 += accel_vec;
+    forces.apply_force(spring_force + movement_force);
 }
