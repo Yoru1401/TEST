@@ -1,7 +1,4 @@
-use crate::game::{
-    setup_playground, CameraPlugin, GameState, InputPlugin, JumpAbilityPlugin, JumpInfo,
-    PlayerPlugin, UIPlugin,
-};
+use crate::game::{setup_playground, CameraPlugin, GameState, InputPlugin, PlayerPlugin, UIPlugin};
 use crate::prelude::*;
 
 pub struct GamePlugin;
@@ -19,13 +16,11 @@ impl Plugin for GamePlugin {
             avian3d::prelude::PhysicsPlugins::default(),
             InputPlugin {}.build(),
             PlayerPlugin,
-            JumpAbilityPlugin,
             CameraPlugin,
             UIPlugin,
         ));
 
         app.init_state::<GameState>();
-        app.init_resource::<JumpInfo>();
 
         app.add_systems(OnEnter(GameState::Playground), setup_playground);
         app.add_systems(PostUpdate, enter_playground);

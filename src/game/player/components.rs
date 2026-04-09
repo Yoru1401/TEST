@@ -1,4 +1,4 @@
-use bevy::prelude::Component;
+use bevy::prelude::*;
 
-#[derive(Component, Debug)]
+#[derive(Component)]
 pub struct PlayerMarker;
