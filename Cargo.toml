@@ -3,6 +3,9 @@ name = "bevy_playground"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+debug = ["bevy/debug"]
+
 [dependencies]
 bevy = { version = "0.18", features = ["bevy_core_pipeline"] }
 avian3d = "0.6"
@@ -17,6 +20,7 @@ leafwing_abilities = "0.12.0"
 debug = 0
 strip = "debuginfo"
 opt-level = 1
+features = ["debug"]
 
 [profile.dev.package."*"]
 opt-level = 3

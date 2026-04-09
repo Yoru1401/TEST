@@ -6,10 +6,10 @@ pub mod setup;
 pub mod states;
 pub mod ui;
 
-pub use camera::CameraPlugin;
-pub use input::InputPlugin;
+pub use camera::{CameraMarker, CameraPlugin};
+pub use input::{CameraInputPlugin, InputPlugin};
 pub use player::PlayerPlugin;
 pub use plugin::GamePlugin;
-pub use setup::setup_playground;
+pub use setup::{is_running, setup_playground};
 pub use states::GameState;
 pub use ui::UIPlugin;

@@ -1,25 +1,37 @@
-use bevy::prelude::{KeyCode, Reflect};
-use leafwing_input_manager::prelude::{Actionlike, InputMap};
+use bevy::prelude::{GamepadButton, KeyCode, Reflect};
+use leafwing_input_manager::prelude::*;
 
 #[derive(Actionlike, Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
 pub enum PlayerAction {
-    MoveForward,
-    MoveBackward,
-    MoveLeft,
-    MoveRight,
+    #[actionlike(DualAxis)]
+    Move,
     Jump,
-    SwitchJumpType,
 }
 
 impl PlayerAction {
     pub fn input_map() -> InputMap<Self> {
-        InputMap::new([
-            (Self::MoveForward, KeyCode::KeyW),
-            (Self::MoveBackward, KeyCode::KeyS),
-            (Self::MoveLeft, KeyCode::KeyA),
-            (Self::MoveRight, KeyCode::KeyD),
-            (Self::Jump, KeyCode::Space),
-            (Self::SwitchJumpType, KeyCode::KeyQ),
-        ])
+        let mut map = InputMap::default();
+        map.insert(PlayerAction::Jump, KeyCode::Space);
+        map.insert(PlayerAction::Jump, GamepadButton::South);
+
+        map.insert_dual_axis(PlayerAction::Move, VirtualDPad::wasd());
+        map.insert_dual_axis(PlayerAction::Move, GamepadStick::LEFT);
+        map
+    }
+}
+
+#[derive(Actionlike, Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
+pub enum CameraAction {
+    #[actionlike(DualAxis)]
+    Look,
+}
+
+impl CameraAction {
+    pub fn input_map() -> InputMap<Self> {
+        let mut map = InputMap::default();
+
+        map.insert_dual_axis(CameraAction::Look, MouseMove::default());
+        map.insert_dual_axis(CameraAction::Look, GamepadStick::RIGHT.inverted_y());
+        map
     }
 }

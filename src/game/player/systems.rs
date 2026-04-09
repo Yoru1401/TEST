@@ -2,9 +2,11 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
 
+use crate::game::camera::components::CameraMarker;
+
 use crate::game::input::PlayerAction;
+use crate::game::is_running;
 use crate::game::player::components::PlayerMarker;
-use crate::game::states::GameState;
 
 pub const MOVE_SPEED: f32 = 8.0;
 pub const JUMP_FORCE: f32 = 12.0;
@@ -14,12 +16,9 @@ pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, player_movement.in_set(MovementSystemSet));
+        app.add_systems(Update, player_movement.run_if(is_running));
     }
 }
-
-#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct MovementSystemSet;
 
 #[derive(Component, Default, Deref, DerefMut)]
 pub struct DesiredVelocity {
@@ -32,9 +31,9 @@ pub struct JumpState {
 }
 
 fn player_movement(
-    state: Res<State<GameState>>,
     time: Res<Time>,
     move_and_slide: MoveAndSlide,
+    camera: Query<&Transform, With<CameraMarker>>,
     mut player: Query<
         (
             Entity,
@@ -43,37 +42,31 @@ fn player_movement(
             &mut JumpState,
             &ActionState<PlayerAction>,
         ),
-        With<PlayerMarker>,
+        (With<PlayerMarker>, Without<CameraMarker>),
     >,
 ) {
-    if state.get() != &GameState::Playground {
+    let Ok(cam_transform) = camera.single() else {
         return;
-    }
+    };
 
     let Ok((entity, mut transform, mut des_vel, mut jump_state, action)) = player.single_mut()
     else {
         return;
     };
 
-    let mut input_dir = Vec3::ZERO;
-    if action.pressed(&PlayerAction::MoveForward) {
-        input_dir.z -= 1.0;
-    }
-    if action.pressed(&PlayerAction::MoveBackward) {
-        input_dir.z += 1.0;
-    }
-    if action.pressed(&PlayerAction::MoveLeft) {
-        input_dir.x -= 1.0;
-    }
-    if action.pressed(&PlayerAction::MoveRight) {
-        input_dir.x += 1.0;
-    }
+    let move_axis = action.axis_pair(&PlayerAction::Move);
+    let raw_input = Vec3::new(move_axis.x, 0.0, -move_axis.y);
 
-    if input_dir.length_squared() > 0.0 {
-        input_dir = input_dir.normalize() * MOVE_SPEED;
-    }
-    des_vel.value.x = input_dir.x;
-    des_vel.value.z = input_dir.z;
+    let forward = -cam_transform.forward();
+    let right = cam_transform.right();
+
+    let forward_flat = Vec3::new(forward.x, 0.0, forward.z).normalize();
+    let right_flat = Vec3::new(right.x, 0.0, right.z).normalize();
+
+    let rotated_input = forward_flat * raw_input.z + right_flat * raw_input.x;
+
+    des_vel.value.x = rotated_input.x * MOVE_SPEED;
+    des_vel.value.z = rotated_input.z * MOVE_SPEED;
 
     if action.pressed(&PlayerAction::Jump) && !jump_state.is_jumping {
         des_vel.value.y = JUMP_FORCE;

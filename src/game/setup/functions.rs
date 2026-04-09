@@ -4,9 +4,15 @@ use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
 
 use crate::game::camera::components::CameraMarker;
+use crate::game::input::CameraAction;
 use crate::game::input::PlayerAction;
 use crate::game::player::components::PlayerMarker;
 use crate::game::player::systems::{DesiredVelocity, JumpState};
+use crate::game::GameState;
+
+pub fn is_running(res: Res<State<GameState>>) -> bool {
+    res.get() == &GameState::Playground
+}
 
 pub fn setup_playground(
     mut commands: Commands,
@@ -62,6 +68,8 @@ pub fn setup_playground(
     commands.spawn((
         Name::new("Camera"),
         CameraMarker,
+        CameraAction::input_map(),
+        ActionState::<CameraAction>::default(),
         Camera3d::default(),
         Transform::from_xyz(0.0, 15.0, 20.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
     ));
