@@ -57,16 +57,13 @@ fn player_movement(
     let move_axis = action.axis_pair(&PlayerAction::Move);
     let raw_input = Vec3::new(move_axis.x, 0.0, -move_axis.y);
 
-    let forward = -cam_transform.forward();
-    let right = cam_transform.right();
+    let forward = -cam_transform.forward().xz().extend(0.0).xzy();
+    let right = cam_transform.right().xz().extend(0.0).xzy();
+    let horizontal = (forward * raw_input.z + right * raw_input.x).normalize_or_zero() * MOVE_SPEED;
 
-    let forward_flat = Vec3::new(forward.x, 0.0, forward.z).normalize();
-    let right_flat = Vec3::new(right.x, 0.0, right.z).normalize();
-
-    let rotated_input = forward_flat * raw_input.z + right_flat * raw_input.x;
-
-    des_vel.value.x = rotated_input.x * MOVE_SPEED;
-    des_vel.value.z = rotated_input.z * MOVE_SPEED;
+    des_vel.value.x = horizontal.x;
+    des_vel.value.z = horizontal.z;
+    des_vel.value.y -= GRAVITY * time.delta_secs();
 
     if action.pressed(&PlayerAction::Jump) && !jump_state.is_jumping {
         des_vel.value.y = JUMP_FORCE;
@@ -93,10 +90,4 @@ fn player_movement(
 
     transform.translation = position;
     des_vel.value = projected_velocity;
-
-    if des_vel.value.y <= 0.1 && position.y <= 0.6 {
-        des_vel.value.y = -GRAVITY * time.delta_secs().min(0.5);
-    } else if des_vel.value.y > 0.1 {
-        des_vel.value.y -= GRAVITY * time.delta_secs();
-    }
 }

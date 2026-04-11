@@ -1,6 +1,6 @@
 use crate::game::{
-    setup_playground, CameraInputPlugin, CameraPlugin, GameState, InputPlugin, PlayerPlugin,
-    UIPlugin,
+    setup_player, setup_playground, CameraInputPlugin, CameraPlugin, GameState, InputPlugin,
+    PlayerPlugin, UIPlugin,
 };
 use crate::prelude::*;
 
@@ -24,7 +24,10 @@ impl Plugin for GamePlugin {
 
         app.init_state::<GameState>();
 
-        app.add_systems(OnEnter(GameState::Playground), setup_playground);
+        app.add_systems(
+            OnEnter(GameState::Playground),
+            (setup_playground, setup_player),
+        );
         app.add_systems(PostUpdate, enter_playground);
     }
 }
