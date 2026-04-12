@@ -6,7 +6,7 @@ use crate::game::camera::components::CameraMarker;
 
 use crate::game::input::PlayerAction;
 use crate::game::is_running;
-use crate::game::player::components::PlayerMarker;
+use crate::game::player::components::{JumpState, PlayerMarker, WallState};
 
 pub const MOVE_SPEED: f32 = 8.0;
 pub const JUMP_FORCE: f32 = 12.0;
@@ -25,14 +25,10 @@ pub struct DesiredVelocity {
     pub value: Vec3,
 }
 
-#[derive(Component, Default)]
-pub struct JumpState {
-    pub is_jumping: bool,
-}
-
 fn player_movement(
     time: Res<Time>,
     move_and_slide: MoveAndSlide,
+    spatial_query: SpatialQuery,
     camera: Query<&Transform, With<CameraMarker>>,
     mut player: Query<
         (
@@ -40,6 +36,7 @@ fn player_movement(
             &mut Transform,
             &mut DesiredVelocity,
             &mut JumpState,
+            &mut WallState,
             &ActionState<PlayerAction>,
         ),
         (With<PlayerMarker>, Without<CameraMarker>),
@@ -49,7 +46,8 @@ fn player_movement(
         return;
     };
 
-    let Ok((entity, mut transform, mut des_vel, mut jump_state, action)) = player.single_mut()
+    let Ok((entity, mut transform, mut des_vel, mut jump_state, mut wall_state, action)) =
+        player.single_mut()
     else {
         return;
     };
@@ -65,7 +63,13 @@ fn player_movement(
     des_vel.value.z = horizontal.z;
     des_vel.value.y -= GRAVITY * time.delta_secs();
 
-    if action.pressed(&PlayerAction::Jump) && !jump_state.is_jumping {
+    if wall_state.is_on_wall && !jump_state.is_grounded {
+        des_vel.value.y = -GRAVITY * time.delta_secs();
+    }
+
+    wall_state.is_on_wall = false;
+
+    if action.pressed(&PlayerAction::Jump) && !jump_state.is_jumping && jump_state.is_grounded {
         des_vel.value.y = JUMP_FORCE;
         jump_state.is_jumping = true;
     }
@@ -73,6 +77,19 @@ fn player_movement(
     if !action.pressed(&PlayerAction::Jump) {
         jump_state.is_jumping = false;
     }
+
+    let ground_check_hit = spatial_query.cast_shape(
+        &Collider::sphere(0.5),
+        transform.translation,
+        Quat::IDENTITY,
+        Dir3::NEG_Y,
+        &ShapeCastConfig {
+            max_distance: 1.3,
+            ..default()
+        },
+        &SpatialQueryFilter::from_excluded_entities([entity]),
+    );
+    jump_state.is_grounded = ground_check_hit.is_some();
 
     let MoveAndSlideOutput {
         position,
@@ -85,7 +102,10 @@ fn player_movement(
         time.delta(),
         &MoveAndSlideConfig::default(),
         &SpatialQueryFilter::from_excluded_entities([entity]),
-        |_| MoveAndSlideHitResponse::Accept,
+        |_| {
+            wall_state.is_on_wall = true;
+            MoveAndSlideHitResponse::Accept
+        },
     );
 
     transform.translation = position;

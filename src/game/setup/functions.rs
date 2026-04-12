@@ -7,7 +7,8 @@ use crate::game::camera::components::CameraMarker;
 use crate::game::input::CameraAction;
 use crate::game::input::PlayerAction;
 use crate::game::player::components::PlayerMarker;
-use crate::game::player::systems::{DesiredVelocity, JumpState};
+use crate::game::player::components::{JumpState, WallState};
+use crate::game::player::systems::DesiredVelocity;
 use crate::game::GameState;
 
 pub fn is_running(res: Res<State<GameState>>) -> bool {
@@ -34,6 +35,7 @@ pub fn setup_player(
         Transform::from_xyz(0.0, 2.0, 0.0),
         DesiredVelocity::default(),
         JumpState::default(),
+        WallState::default(),
     ));
 
     commands.spawn((
