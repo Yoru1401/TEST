@@ -93,6 +93,15 @@ pub fn setup_playground(
     }
 
     commands.spawn((
+        Name::new("ZoneC Wall"),
+        RigidBody::Static,
+        Collider::cuboid(0.1, 50.0, 50.0),
+        Mesh3d(meshes.add(Cuboid::new(0.1, 50.0, 50.0))),
+        MeshMaterial3d(wall_mat.clone()),
+        Transform::from_xyz(-15.0, 25.0, 0.0),
+    ));
+
+    commands.spawn((
         Name::new("Directional Light"),
         DirectionalLight {
             shadows_enabled: true,
