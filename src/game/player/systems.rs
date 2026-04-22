@@ -11,16 +11,10 @@ pub const MOVE_SPEED: f32 = 8.0;
 pub const JUMP_FORCE: f32 = 12.0;
 pub const GRAVITY: f32 = 30.0;
 
-// Wall run tuning constants
-/// Minimum horizontal speed toward the wall to trigger a wall run
 pub const WALL_RUN_MIN_SPEED: f32 = 4.0;
-/// Upward impulse given when first contacting a wall head-on
 pub const WALL_RUN_UP_IMPULSE: f32 = 8.0;
-/// Gravity scale while sliding down (friction from hands/feet)
 pub const WALL_SLIDE_GRAVITY_SCALE: f32 = 0.15;
-/// Once upward velocity drops below this, we switch to sliding
 pub const WALL_SLIDE_THRESHOLD: f32 = 1.0;
-/// Lateral speed boost when wall-jumping away
 pub const WALL_JUMP_LATERAL_FORCE: f32 = 6.0;
 
 pub struct PlayerPlugin;
@@ -38,9 +32,9 @@ pub struct DesiredVelocity {
 
 fn player_movement(
     time: Res<Time>,
-    move_and_slide: MoveAndSlide,
     spatial_query: SpatialQuery,
     camera: Query<&Transform, With<CameraMarker>>,
+    move_and_slide: MoveAndSlide,
     mut player: Query<
         (
             Entity,
@@ -64,6 +58,7 @@ fn player_movement(
     };
 
     let dt = time.delta_secs();
+    let filter = SpatialQueryFilter::from_excluded_entities([entity]);
 
     // ── Input ────────────────────────────────────────────────────────────────
     let move_axis = action.axis_pair(&PlayerAction::Move);
@@ -73,74 +68,10 @@ fn player_movement(
     let right = cam_transform.right().xz().extend(0.0).xzy();
     let horizontal = (forward * raw_input.z + right * raw_input.x).normalize_or_zero() * MOVE_SPEED;
 
-    // ── Ground movement ──────────────────────────────────────────────────────
     des_vel.value.x = horizontal.x;
     des_vel.value.z = horizontal.z;
 
-    // ── Wall interaction ─────────────────────────────────────────────────────
-    let was_on_wall = wall_state.is_on_wall;
-
-    if wall_state.is_on_wall && !jump_state.is_grounded {
-        let normal = wall_state.wall_normal;
-
-        // How much of our horizontal velocity is pointed INTO the wall (negative = into wall)
-        let into_wall = des_vel.value.dot(-normal);
-
-        // First frame touching wall: give upward impulse if we hit it with enough speed
-        if !was_on_wall && into_wall >= WALL_RUN_MIN_SPEED {
-            des_vel.value.y = WALL_RUN_UP_IMPULSE;
-            wall_state.is_wall_sliding = false;
-            wall_state.wall_run_timer = 0.0;
-        }
-
-        wall_state.wall_run_timer += dt;
-
-        // Transition to sliding once upward velocity is too low
-        if des_vel.value.y < WALL_SLIDE_THRESHOLD {
-            wall_state.is_wall_sliding = true;
-        }
-
-        if wall_state.is_wall_sliding {
-            // Reduced gravity — friction from hands/feet slowing the fall
-            des_vel.value.y -= GRAVITY * WALL_SLIDE_GRAVITY_SCALE * dt;
-            // Clamp so we don't accelerate endlessly downward on the wall
-            des_vel.value.y = des_vel.value.y.max(-MOVE_SPEED * 0.5);
-        } else {
-            // Still running up — apply normal gravity so the arc feels natural
-            des_vel.value.y -= GRAVITY * dt;
-        }
-
-        // Keep the player pressed against the wall (prevents drifting off)
-        des_vel.value -= normal * into_wall.min(0.0);
-
-        // ── Wall jump ────────────────────────────────────────────────────────
-        if action.just_pressed(&PlayerAction::Jump) {
-            // Launch away from the wall and upward
-            des_vel.value = normal * WALL_JUMP_LATERAL_FORCE
-                + Vec3::Y * JUMP_FORCE
-                // Preserve some of the along-wall momentum
-                + horizontal * 0.4;
-            jump_state.is_jumping = true;
-            wall_state.is_on_wall = false;
-            wall_state.is_wall_sliding = false;
-            wall_state.wall_run_timer = 0.0;
-        }
-    } else {
-        // Not on a wall — normal gravity
-        des_vel.value.y -= GRAVITY * dt;
-    }
-
-    // ── Ground jump ──────────────────────────────────────────────────────────
-    if action.pressed(&PlayerAction::Jump) && !jump_state.is_jumping && jump_state.is_grounded {
-        des_vel.value.y = JUMP_FORCE;
-        jump_state.is_jumping = true;
-    }
-
-    if !action.pressed(&PlayerAction::Jump) {
-        jump_state.is_jumping = false;
-    }
-
-    // ── Ground check ─────────────────────────────────────────────────────────
+    // ── Ground check (must run before jump/gravity logic) ────────────────────
     let ground_hit = spatial_query.cast_shape(
         &collider,
         transform.translation,
@@ -150,37 +81,125 @@ fn player_movement(
             max_distance: 1.3,
             ..default()
         },
-        &SpatialQueryFilter::from_excluded_entities([entity]),
+        &filter,
     );
     jump_state.is_grounded = ground_hit.is_some();
 
-    // Reset wall state each frame; the callback below re-sets it if still touching
+    // ── Wall interaction ─────────────────────────────────────────────────────
+    if wall_state.is_on_wall && !jump_state.is_grounded {
+        let normal = wall_state.wall_normal;
+
+        if des_vel.value.y < WALL_SLIDE_THRESHOLD {
+            wall_state.is_wall_sliding = true;
+        }
+
+        if wall_state.is_wall_sliding {
+            des_vel.value.y -= GRAVITY * WALL_SLIDE_GRAVITY_SCALE * dt;
+            des_vel.value.y = des_vel.value.y.max(-MOVE_SPEED * 0.5);
+        } else {
+            des_vel.value.y -= GRAVITY * dt;
+        }
+
+        // Wall jump
+        if action.just_pressed(&PlayerAction::Jump) {
+            des_vel.value =
+                normal * WALL_JUMP_LATERAL_FORCE + Vec3::Y * JUMP_FORCE + horizontal * 0.4;
+            jump_state.is_jumping = true;
+            wall_state.is_on_wall = false;
+            wall_state.is_wall_sliding = false;
+        }
+    } else {
+        des_vel.value.y -= GRAVITY * dt;
+    }
+
+    // ── Ground jump ───────────────────────────────────────────────────────────
+    if action.just_pressed(&PlayerAction::Jump) && jump_state.is_grounded {
+        des_vel.value.y = JUMP_FORCE;
+        jump_state.is_jumping = true;
+    }
+    if jump_state.is_grounded && des_vel.value.y <= 0.0 {
+        jump_state.is_jumping = false;
+    }
+
+    // Snapshot last frame's wall state before resetting
     wall_state.is_on_wall = false;
     wall_state.wall_normal = Vec3::ZERO;
 
     // ── Move and slide ────────────────────────────────────────────────────────
-    let MoveAndSlideOutput {
-        position,
-        projected_velocity,
-    } = move_and_slide.move_and_slide(
+    const SKIN_WIDTH: f32 = 0.01;
+
+    let config = MoveAndSlideConfig::default();
+    let mut velocity = des_vel.value;
+    let mut position = transform.translation;
+    let mut time_left = dt;
+
+    let depenetration_offset = move_and_slide.depenetrate(
         &collider,
-        transform.translation,
+        position,
         transform.rotation,
-        des_vel.value,
-        time.delta(),
-        &MoveAndSlideConfig::default(),
-        &SpatialQueryFilter::from_excluded_entities([entity]),
-        |hit| {
-            // Only treat roughly-vertical surfaces as walls (not ceiling/floor)
-            let up_dot = hit.normal.dot(Vec3::Y).abs();
-            if up_dot < 0.4 {
-                wall_state.is_on_wall = true;
-                wall_state.wall_normal = **hit.normal;
-            }
-            MoveAndSlideHitResponse::Accept
-        },
+        &(&config).into(),
+        &filter,
     );
+    position += depenetration_offset;
+
+    for _ in 0..config.move_and_slide_iterations {
+        let sweep = time_left * velocity;
+        let length = sweep.length();
+
+        if length < 1e-4 {
+            break;
+        }
+
+        let vel_dir = Dir3::new(sweep / length).unwrap();
+
+        let hit = spatial_query.cast_shape(
+            &collider,
+            position,
+            transform.rotation,
+            vel_dir,
+            &ShapeCastConfig {
+                max_distance: length,
+                ..default()
+            },
+            &filter,
+        );
+
+        let Some(sweep_hit) = hit else {
+            position += sweep;
+            break;
+        };
+
+        let fraction = sweep_hit.distance / length;
+        position += *vel_dir * (sweep_hit.distance - SKIN_WIDTH).max(0.0);
+        time_left *= 1.0 - fraction;
+
+        let hit_normal: Vec3 = sweep_hit.normal1.into();
+        let up_dot = hit_normal.dot(Vec3::Y);
+
+        if up_dot < 0.7 && up_dot > -0.3 {
+            wall_state.is_on_wall = true;
+            wall_state.wall_normal = hit_normal;
+        }
+
+        let dot = velocity.dot(hit_normal);
+        if dot < 0.0 {
+            velocity -= dot * hit_normal;
+        }
+
+        if time_left < 1e-6 {
+            break;
+        }
+    }
+
+    let depenetration_offset = move_and_slide.depenetrate(
+        &collider,
+        position,
+        transform.rotation,
+        &(&config).into(),
+        &filter,
+    );
+    position += depenetration_offset;
 
     transform.translation = position;
-    des_vel.value = projected_velocity;
+    des_vel.value = velocity;
 }

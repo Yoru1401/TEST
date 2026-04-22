@@ -32,7 +32,7 @@ pub fn setup_player(
         ActionState::<PlayerAction>::default(),
         Mesh3d(meshes.add(Sphere::new(0.5))),
         MeshMaterial3d(player_mat),
-        Transform::from_xyz(0.0, 2.0, 0.0),
+        Transform::from_xyz(12.0, 20.0, 8.0),
         DesiredVelocity::default(),
         JumpState::default(),
         WallState::default(),
