@@ -1,6 +1,6 @@
 use crate::game::{
     setup_player, setup_playground, CameraInputPlugin, CameraPlugin, GameState, InputPlugin,
-    PlayerPlugin, UIPlugin,
+    PhysicsPlugin, PlayerPlugin, UIPlugin,
 };
 use crate::prelude::*;
 
@@ -15,7 +15,8 @@ impl Plugin for GamePlugin {
             }),
             ..default()
         }));
-        app.add_plugins(avian3d::prelude::PhysicsPlugins::default());
+        app.add_plugins(PhysicsPlugin);
+        //app.add_plugins(GrapplePlugin);
         app.add_plugins(InputPlugin {}.build());
         app.add_plugins(CameraInputPlugin {}.build());
         app.add_plugins(PlayerPlugin);
