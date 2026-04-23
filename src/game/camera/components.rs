@@ -1,4 +1,4 @@
-use crate::prelude::Component;
+use bevy::prelude::*;
 
-#[derive(Component, Debug)]
+#[derive(Component)]
 pub struct CameraMarker;

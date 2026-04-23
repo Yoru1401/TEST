@@ -1,5 +1,5 @@
 pub mod actions;
-pub mod plugin;
+pub mod systems;
 
 pub use actions::{CameraAction, GlobalAction, PlayerAction};
-pub use plugin::{CameraInputPlugin, GlobalInputPlugin, InputPlugin};
+pub use systems::InputPlugin;

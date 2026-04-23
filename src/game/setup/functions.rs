@@ -1,19 +1,4 @@
-use avian3d::prelude::*;
-use bevy::color::Color;
-use bevy::prelude::*;
-use leafwing_input_manager::prelude::*;
-
-use crate::game::camera::components::CameraMarker;
-use crate::game::input::{CameraAction, GlobalAction, PlayerAction};
-use crate::game::physics::components::{
-    Contacts, ForceApplier, GroundState, JumpState, PhysicsConfig, PhysicsMaterial, PhysicsVelocity,
-};
-use crate::game::player::components::PlayerMarker;
-use crate::game::GameState;
-
-pub fn is_running(res: Res<State<GameState>>) -> bool {
-    res.get() == &GameState::Playing
-}
+use crate::prelude::*;
 
 #[derive(Component)]
 pub struct GameWorldSpawned;
@@ -28,14 +13,11 @@ pub fn setup_playground(
         return;
     }
 
-    let ground_mat = materials.add(StandardMaterial::from_color(Color::srgb(0.2, 0.3, 0.2)));
-    let wall_mat = materials.add(StandardMaterial::from_color(Color::srgb(0.2, 0.1, 0.3)));
-    let ramp_mat = materials.add(StandardMaterial::from_color(Color::srgb(0.3, 0.3, 0.4)));
-    let concrete = PhysicsMaterial::concrete();
+    let concrete = crate::game::PhysicsMaterial::concrete();
 
     let mut player_cmd = commands.spawn((
         Name::new("Player"),
-        PlayerMarker,
+        crate::game::PlayerMarker,
         GameWorldSpawned,
         RigidBody::Kinematic,
         Collider::sphere(0.5),
@@ -43,27 +25,30 @@ pub fn setup_playground(
         Mesh3d(meshes.add(Sphere::new(0.5))),
         MeshMaterial3d(materials.add(StandardMaterial::from_color(Color::srgb(0.9, 0.2, 0.2)))),
         Transform::from_xyz(12.0, 20.0, 8.0),
-        PhysicsConfig::player(),
-        PhysicsVelocity::default(),
-        GroundState::default(),
-        JumpState::default(),
-        ForceApplier::default(),
-        Contacts::default(),
+        crate::game::PhysicsConfig::player(),
+        crate::game::PhysicsVelocity::default(),
+        crate::game::GroundState::default(),
+        crate::game::ForceApplier::default(),
+        crate::game::Contacts::default(),
     ));
-    player_cmd.insert(PlayerAction::input_map());
-    player_cmd.insert(GlobalAction::input_map());
-    player_cmd.insert(ActionState::<PlayerAction>::default());
-    player_cmd.insert(ActionState::<GlobalAction>::default());
+    player_cmd.insert(crate::game::PlayerAction::input_map());
+    player_cmd.insert(crate::game::GlobalAction::input_map());
+    player_cmd.insert(ActionState::<crate::game::PlayerAction>::default());
+    player_cmd.insert(ActionState::<crate::game::GlobalAction>::default());
 
     commands.spawn((
         Name::new("Camera"),
-        CameraMarker,
+        crate::game::CameraMarker,
         GameWorldSpawned,
-        CameraAction::input_map(),
-        ActionState::<CameraAction>::default(),
+        crate::game::CameraAction::input_map(),
+        ActionState::<crate::game::CameraAction>::default(),
         Camera3d::default(),
         Transform::from_xyz(0.0, 15.0, 20.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
     ));
+
+    let ground_mat = materials.add(StandardMaterial::from_color(Color::srgb(0.2, 0.3, 0.2)));
+    let wall_mat = materials.add(StandardMaterial::from_color(Color::srgb(0.2, 0.1, 0.3)));
+    let ramp_mat = materials.add(StandardMaterial::from_color(Color::srgb(0.3, 0.3, 0.4)));
 
     commands.spawn((
         Name::new("Ground"),
@@ -126,4 +111,8 @@ pub fn setup_playground(
         },
         Transform::from_xyz(10.0, 20.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
+}
+
+pub fn is_running(res: Res<State<crate::game::GameState>>) -> bool {
+    res.get() == &crate::game::GameState::Playing
 }

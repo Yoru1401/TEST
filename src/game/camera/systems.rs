@@ -1,31 +1,35 @@
-use avian3d::prelude::{Collider, ShapeCastConfig, SpatialQuery, SpatialQueryFilter};
+use avian3d::prelude::*;
 use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
 
-use crate::game::camera::components::CameraMarker;
-use crate::game::input::CameraAction;
-use crate::game::is_running;
-use crate::game::player::components::PlayerMarker;
-
-pub const CAM_DIST: f32 = 10.0;
-pub const CAM_HEIGHT: f32 = 2.0;
-pub const LOOK_SENSITIVITY: f32 = 3.0;
-pub const CAM_COLLISION_RADIUS: f32 = 0.3;
+const CAM_DIST: f32 = 10.0;
+const CAM_HEIGHT: f32 = 2.0;
+const LOOK_SENSITIVITY: f32 = 3.0;
+const CAM_COLLISION_RADIUS: f32 = 0.3;
 
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, update_camera.run_if(is_running));
+        app.add_systems(
+            Update,
+            update_camera.run_if(crate::game::states::is_running),
+        );
     }
 }
 
 fn update_camera(
     time: Res<Time>,
-    player: Query<(Entity, &Transform), With<PlayerMarker>>,
+    player: Query<(Entity, &Transform), With<crate::game::player::PlayerMarker>>,
     mut camera: Query<
-        (&mut Transform, &ActionState<CameraAction>),
-        (With<CameraMarker>, Without<PlayerMarker>),
+        (
+            &mut Transform,
+            &ActionState<crate::game::input::CameraAction>,
+        ),
+        (
+            With<crate::game::camera::CameraMarker>,
+            Without<crate::game::player::PlayerMarker>,
+        ),
     >,
     spatial: SpatialQuery,
     mut yaw: Local<f32>,
@@ -34,13 +38,11 @@ fn update_camera(
     let Ok((player_entity, player_transform)) = player.single() else {
         return;
     };
-
     let Ok((mut cam_transform, action)) = camera.single_mut() else {
         return;
     };
 
-    let input = action.axis_pair(&CameraAction::Look);
-
+    let input = action.axis_pair(&crate::game::input::CameraAction::Look);
     if input.x.abs() > 0.05 || input.y.abs() > 0.05 {
         *yaw -= input.x * LOOK_SENSITIVITY * time.delta_secs();
         *pitch -= input.y * LOOK_SENSITIVITY * time.delta_secs();
@@ -58,7 +60,7 @@ fn update_camera(
     if ray_dist > 0.0 {
         let filter = SpatialQueryFilter::from_excluded_entities([player_entity]);
         let dir_normalized = ray_dir / ray_dist;
-        let dir3 = Dir3::new(dir_normalized).unwrap_or_else(|_| Dir3::Y);
+        let dir3 = Dir3::new(dir_normalized).unwrap_or(Dir3::Y);
 
         if let Some(hit) = spatial.cast_shape(
             &Collider::sphere(CAM_COLLISION_RADIUS),

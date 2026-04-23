@@ -2,10 +2,11 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
 
+use crate::game::camera::CameraMarker;
 use crate::game::input::PlayerAction;
-use crate::game::is_running;
-use crate::game::physics::components::{PhysicsConfig, PhysicsVelocity};
-use crate::game::player::components::PlayerMarker;
+use crate::game::physics::{PhysicsConfig, PhysicsVelocity};
+use crate::game::player::PlayerMarker;
+use crate::game::states::is_running;
 
 pub struct GrapplePlugin;
 
@@ -65,7 +66,7 @@ fn fire_grapple(
     mut materials: ResMut<Assets<StandardMaterial>>,
     cooldowns: Query<&GrappleCooldown>,
     action: Query<&ActionState<PlayerAction>>,
-    camera: Query<&Transform, With<crate::game::camera::components::CameraMarker>>,
+    camera: Query<&Transform, With<CameraMarker>>,
     player: Query<Entity, With<PlayerMarker>>,
 ) {
     let Ok(cam_transform) = camera.single() else {
@@ -86,7 +87,6 @@ fn fire_grapple(
 
     if action_state.just_pressed(&PlayerAction::Jump) {
         let direction = -cam_transform.forward();
-
         commands.spawn((
             GrappleProjectile::new(player_entity),
             RigidBody::Kinematic,
@@ -112,12 +112,7 @@ fn update_grapple_projectile(
     projectiles: Query<(Entity, &PhysicsVelocity, &Transform)>,
 ) {
     for (entity, vel, transform) in &projectiles {
-        if transform.translation.y < -10.0 {
-            commands.entity(entity).despawn();
-            continue;
-        }
-
-        if vel.linear.length() > 50.0 {
+        if transform.translation.y < -10.0 || vel.linear.length() > 50.0 {
             commands.entity(entity).despawn();
         }
     }
@@ -131,14 +126,12 @@ fn update_swing(
     let Ok(player_transform) = player.single() else {
         return;
     };
-
     for mut swing in &mut swing_states {
         if swing.is_swinging {
             if let Some(hook_entity) = swing.hook_entity {
                 if let Ok((_, hook_transform)) = projectiles.get(hook_entity) {
                     let distance =
                         (hook_transform.translation - player_transform.translation).length();
-
                     if distance > swing.rest_length * 3.0 {
                         swing.is_swinging = false;
                         swing.hook_entity = None;

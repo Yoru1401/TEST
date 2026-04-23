@@ -1,5 +1,5 @@
-use bevy::prelude::{GamepadButton, KeyCode, Reflect};
-use leafwing_input_manager::prelude::*;
+pub use bevy::prelude::{GamepadButton, KeyCode, Reflect};
+pub use leafwing_input_manager::prelude::*;
 
 #[derive(Actionlike, Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
 pub enum PlayerAction {
@@ -11,11 +11,10 @@ pub enum PlayerAction {
 impl PlayerAction {
     pub fn input_map() -> InputMap<Self> {
         let mut map = InputMap::default();
-        map.insert(PlayerAction::Jump, KeyCode::Space);
-        map.insert(PlayerAction::Jump, GamepadButton::South);
-
-        map.insert_dual_axis(PlayerAction::Move, VirtualDPad::wasd());
-        map.insert_dual_axis(PlayerAction::Move, GamepadStick::LEFT);
+        map.insert(Self::Jump, KeyCode::Space);
+        map.insert(Self::Jump, GamepadButton::South);
+        map.insert_dual_axis(Self::Move, VirtualDPad::wasd());
+        map.insert_dual_axis(Self::Move, GamepadStick::LEFT);
         map
     }
 }
@@ -29,9 +28,8 @@ pub enum CameraAction {
 impl CameraAction {
     pub fn input_map() -> InputMap<Self> {
         let mut map = InputMap::default();
-
-        map.insert_dual_axis(CameraAction::Look, MouseMove::default());
-        map.insert_dual_axis(CameraAction::Look, GamepadStick::RIGHT.inverted_y());
+        map.insert_dual_axis(Self::Look, MouseMove::default());
+        map.insert_dual_axis(Self::Look, GamepadStick::RIGHT.inverted_y());
         map
     }
 }
@@ -44,9 +42,9 @@ pub enum GlobalAction {
 impl GlobalAction {
     pub fn input_map() -> InputMap<Self> {
         let mut map = InputMap::default();
-        map.insert(GlobalAction::Pause, KeyCode::Escape);
-        map.insert(GlobalAction::Pause, KeyCode::KeyP);
-        map.insert(GlobalAction::Pause, GamepadButton::Start);
+        map.insert(Self::Pause, KeyCode::Escape);
+        map.insert(Self::Pause, KeyCode::KeyP);
+        map.insert(Self::Pause, GamepadButton::Start);
         map
     }
 }
