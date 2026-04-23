@@ -1,6 +1,7 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
+use crate::game::is_running;
 use crate::game::physics::components::{
     Contacts, ForceApplier, GroundState, PhysicsConfig, PhysicsMaterial, PhysicsVelocity,
     SpringAnchor, TensionAnchor,
@@ -12,10 +13,10 @@ pub struct PhysicsPlugin;
 impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(avian3d::prelude::PhysicsPlugins::default());
-        app.add_systems(PreUpdate, detect_ground);
-        app.add_systems(Update, apply_forces);
-        app.add_systems(Update, accumulate_forces);
-        app.add_systems(PostUpdate, resolve_collisions);
+        app.add_systems(PreUpdate, detect_ground.run_if(is_running));
+        app.add_systems(Update, apply_forces.run_if(is_running));
+        app.add_systems(Update, accumulate_forces.run_if(is_running));
+        app.add_systems(PostUpdate, resolve_collisions.run_if(is_running));
     }
 }
 
@@ -27,12 +28,11 @@ pub fn apply_forces(time: Res<Time>, mut forces: Query<(&mut ForceApplier, &mut 
 }
 
 pub fn accumulate_forces(
-    time: Res<Time>,
     transforms: Query<&Transform>,
     mut bodies: Query<
         (
             Entity,
-            &mut PhysicsVelocity,
+            &PhysicsVelocity,
             &PhysicsConfig,
             &mut ForceApplier,
             Option<&TensionAnchor>,
@@ -42,14 +42,14 @@ pub fn accumulate_forces(
         With<PhysicsVelocity>,
     >,
 ) {
-    let dt = time.delta_secs();
-
-    for (entity, mut vel, config, mut force_app, tension, spring, ground_state) in &mut bodies {
-        let control = if ground_state.map(|g| g.is_grounded).unwrap_or(false) {
-            config.ground_control
-        } else {
-            config.air_control
-        };
+    for (entity, vel, config, mut force_app, tension, spring, ground_state) in &mut bodies {
+        let control = ground_state.map_or(config.air_control, |g| {
+            if g.is_grounded {
+                config.ground_control
+            } else {
+                config.air_control
+            }
+        });
 
         force_app.add_force(Vec3::NEG_Y * config.gravity * control);
 
@@ -82,17 +82,15 @@ pub fn accumulate_forces(
             let vel_dir = vel.linear / speed;
             force_app.add_force(-vel_dir * config.drag * speed * speed);
         }
-
-        vel.angular *= 1.0 / (1.0 + config.torsion * dt);
     }
 }
 
 pub fn detect_ground(
     spatial_query: SpatialQuery,
     transforms: Query<&Transform>,
-    mut bodies: Query<(Entity, &mut GroundState, &PhysicsConfig), With<PhysicsVelocity>>,
+    mut bodies: Query<(Entity, &mut GroundState), With<PhysicsVelocity>>,
 ) {
-    for (entity, mut ground_state, _config) in &mut bodies {
+    for (entity, mut ground_state) in &mut bodies {
         let Ok(transform) = transforms.get(entity) else {
             continue;
         };
@@ -136,15 +134,14 @@ pub fn resolve_collisions(
 ) {
     let dt = time.delta_secs();
     let move_config = MoveAndSlideConfig::default();
-    let collider = Collider::sphere(0.5);
 
-    for (entity, mut vel, _physics_config, mut contacts, mut transform) in &mut bodies {
+    for (entity, mut vel, config, mut contacts, mut transform) in &mut bodies {
         contacts.clear();
 
         let filter = SpatialQueryFilter::from_excluded_entities([entity]);
 
         let depen_offset = move_and_slide.depenetrate(
-            &collider,
+            &Collider::sphere(0.5),
             transform.translation,
             Quat::IDENTITY,
             &(&move_config).into(),
@@ -170,7 +167,7 @@ pub fn resolve_collisions(
             };
 
             let hit = spatial_query.cast_shape(
-                &collider,
+                &Collider::sphere(0.5),
                 position,
                 Quat::IDENTITY,
                 vel_dir,
@@ -202,12 +199,8 @@ pub fn resolve_collisions(
                 let normal_part = velocity_along_normal * hit_normal;
                 let tangent_part = velocity - normal_part;
 
-                let material_restitution = materials
-                    .get(hit_entity)
-                    .map(|m| m.restitution)
-                    .unwrap_or(0.0);
-                let material_friction =
-                    materials.get(hit_entity).map(|m| m.friction).unwrap_or(0.0);
+                let material_restitution = materials.get(hit_entity).map_or(0.0, |m| m.restitution);
+                let material_friction = materials.get(hit_entity).map_or(0.0, |m| m.friction);
 
                 velocity -= normal_part * (1.0 - material_restitution);
 
@@ -218,7 +211,7 @@ pub fn resolve_collisions(
 
                 let r: Vec3 = hit_point - position;
                 let torque = r.cross(normal_part * velocity_along_normal);
-                vel.angular += torque * _physics_config.torsion * dt;
+                vel.angular += torque * config.torsion * dt;
             }
 
             if time_left < 1e-6 {

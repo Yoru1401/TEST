@@ -60,7 +60,6 @@ impl Default for GrappleCooldown {
 }
 
 fn fire_grapple(
-    _time: Res<Time>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -69,8 +68,6 @@ fn fire_grapple(
     camera: Query<&Transform, With<crate::game::camera::components::CameraMarker>>,
     player: Query<Entity, With<PlayerMarker>>,
 ) {
-    let _dt = _time.delta_secs();
-
     let Ok(cam_transform) = camera.single() else {
         return;
     };
@@ -102,7 +99,7 @@ fn fire_grapple(
                 air_control: 1.0,
                 ground_control: 1.0,
             },
-            PhysicsVelocity::new(),
+            PhysicsVelocity::default(),
             Mesh3d(meshes.add(Sphere::new(0.1))),
             MeshMaterial3d(materials.add(StandardMaterial::from_color(Color::srgb(1.0, 0.8, 0.0)))),
             Transform::from_translation(cam_transform.translation + direction * 0.5),
@@ -111,27 +108,22 @@ fn fire_grapple(
 }
 
 fn update_grapple_projectile(
-    time: Res<Time>,
     mut commands: Commands,
-    mut projectiles: Query<(Entity, &GrappleProjectile, &mut PhysicsVelocity, &Transform)>,
+    projectiles: Query<(Entity, &PhysicsVelocity, &Transform)>,
 ) {
-    let _dt = time.delta_secs();
-
-    for (entity, _proj, vel, transform) in &mut projectiles {
+    for (entity, vel, transform) in &projectiles {
         if transform.translation.y < -10.0 {
             commands.entity(entity).despawn();
             continue;
         }
 
-        let distance = vel.linear.length();
-        if distance > 50.0 {
+        if vel.linear.length() > 50.0 {
             commands.entity(entity).despawn();
         }
     }
 }
 
 fn update_swing(
-    _time: Res<Time>,
     player: Query<&Transform, With<PlayerMarker>>,
     projectiles: Query<(Entity, &Transform), With<GrappleProjectile>>,
     mut swing_states: Query<&mut SwingState>,

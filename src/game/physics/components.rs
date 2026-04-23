@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-#[derive(Component)]
+#[derive(Component, Copy, Clone, Default)]
 pub struct PhysicsConfig {
     pub gravity: f32,
     pub drag: f32,
@@ -10,7 +10,7 @@ pub struct PhysicsConfig {
 }
 
 impl PhysicsConfig {
-    pub fn player() -> Self {
+    pub const fn player() -> Self {
         Self {
             gravity: 30.0,
             drag: 0.05,
@@ -20,7 +20,7 @@ impl PhysicsConfig {
         }
     }
 
-    pub fn ball() -> Self {
+    pub const fn ball() -> Self {
         Self {
             gravity: 20.0,
             drag: 0.02,
@@ -30,7 +30,7 @@ impl PhysicsConfig {
         }
     }
 
-    pub fn hovercraft() -> Self {
+    pub const fn hovercraft() -> Self {
         Self {
             gravity: 5.0,
             drag: 1.5,
@@ -41,66 +41,45 @@ impl PhysicsConfig {
     }
 }
 
-impl Default for PhysicsConfig {
-    fn default() -> Self {
-        Self {
-            gravity: 30.0,
-            drag: 0.1,
-            torsion: 2.0,
-            air_control: 0.8,
-            ground_control: 1.0,
-        }
-    }
-}
-
-#[derive(Component)]
+#[derive(Component, Copy, Clone, Default)]
 pub struct PhysicsMaterial {
     pub restitution: f32,
     pub friction: f32,
 }
 
 impl PhysicsMaterial {
-    pub fn concrete() -> Self {
+    pub const fn concrete() -> Self {
         Self {
             restitution: 0.1,
             friction: 0.05,
         }
     }
 
-    pub fn ice() -> Self {
+    pub const fn ice() -> Self {
         Self {
             restitution: 0.05,
             friction: 0.05,
         }
     }
 
-    pub fn rubber() -> Self {
+    pub const fn rubber() -> Self {
         Self {
             restitution: 0.8,
             friction: 0.6,
         }
     }
 
-    pub fn metal() -> Self {
+    pub const fn metal() -> Self {
         Self {
             restitution: 0.2,
             friction: 0.4,
         }
     }
 
-    pub fn wood() -> Self {
+    pub const fn wood() -> Self {
         Self {
             restitution: 0.3,
             friction: 0.5,
-        }
-    }
-}
-
-impl Default for PhysicsMaterial {
-    fn default() -> Self {
-        Self {
-            restitution: 0.0,
-            friction: 0.0,
         }
     }
 }
@@ -115,33 +94,17 @@ pub struct SpringAnchor {
     pub stiffness: f32,
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Copy, Clone, Default)]
 pub struct PhysicsVelocity {
     pub linear: Vec3,
     pub angular: Vec3,
 }
 
-impl PhysicsVelocity {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-#[derive(Component)]
+#[derive(Component, Clone, Default)]
 pub struct Contacts {
     pub entities: Vec<Entity>,
     pub normals: Vec<Vec3>,
     pub points: Vec<Vec3>,
-}
-
-impl Default for Contacts {
-    fn default() -> Self {
-        Self {
-            entities: Vec::new(),
-            normals: Vec::new(),
-            points: Vec::new(),
-        }
-    }
 }
 
 impl Contacts {
@@ -158,7 +121,7 @@ impl Contacts {
     }
 }
 
-#[derive(Component, Clone, Copy, Debug, PartialEq)]
+#[derive(Component, Copy, Clone, Debug, PartialEq)]
 pub struct GroundState {
     pub is_grounded: bool,
     pub ground_normal: Vec3,

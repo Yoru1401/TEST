@@ -54,7 +54,6 @@ fn player_input(
         if !contacts.entities.is_empty() {
             let jump_dir = (contacts.normals[0] + Vec3::Y * 0.3).normalize();
             force_app.add_impulse(jump_dir * JUMP_VELOCITY);
-            return;
         }
     }
 }

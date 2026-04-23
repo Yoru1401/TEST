@@ -1,4 +1,4 @@
-use crate::game::input::{CameraAction, PlayerAction};
+use crate::game::input::{CameraAction, GlobalAction, PlayerAction};
 use leafwing_input_manager::prelude::InputManagerPlugin;
 
 pub struct InputPlugin;
@@ -14,5 +14,13 @@ pub struct CameraInputPlugin;
 impl CameraInputPlugin {
     pub fn build(self) -> InputManagerPlugin<CameraAction> {
         InputManagerPlugin::<CameraAction>::default()
+    }
+}
+
+pub struct GlobalInputPlugin;
+
+impl GlobalInputPlugin {
+    pub fn build(self) -> InputManagerPlugin<GlobalAction> {
+        InputManagerPlugin::<GlobalAction>::default()
     }
 }

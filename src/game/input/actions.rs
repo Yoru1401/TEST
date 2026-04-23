@@ -35,3 +35,18 @@ impl CameraAction {
         map
     }
 }
+
+#[derive(Actionlike, Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
+pub enum GlobalAction {
+    Pause,
+}
+
+impl GlobalAction {
+    pub fn input_map() -> InputMap<Self> {
+        let mut map = InputMap::default();
+        map.insert(GlobalAction::Pause, KeyCode::Escape);
+        map.insert(GlobalAction::Pause, KeyCode::KeyP);
+        map.insert(GlobalAction::Pause, GamepadButton::Start);
+        map
+    }
+}

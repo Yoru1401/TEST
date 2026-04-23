@@ -4,5 +4,6 @@ use crate::prelude::States;
 pub enum GameState {
     #[default]
     MainMenu,
-    Playground,
+    Playing,
+    Paused,
 }
