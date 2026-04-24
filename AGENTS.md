@@ -6,8 +6,9 @@ This document provides guidelines for agents operating in this Bevy game engine 
 
 - **Language**: Rust (edition 2021)
 - **Framework**: Bevy 0.18
-- **Physics**: avian3d 0.6
-- **Input**: leafwing-input-manager 0.20
+- **Physics**: Custom system built on avian3d 0.6 (spatial queries), NOT rigid body simulation
+- **Input**: leafwing-input-manager 0.20 (action states as components)
+- **UI**: univis_ui 0.2.0-alpha.1 (separate from Bevy UI)
 - **Build Target**: x86_64-pc-windows-msvc
 
 ## Build Commands
@@ -66,11 +67,24 @@ cargo fmt -- --check  # Check formatting without changes
 
 ### Bevy-Specific Patterns
 
-- **Components**: Use `#[derive(Component)]` on structs
-- **Systems**: Functions taking `&mut App` or `(Query, Commands, etc.)`
-- **Plugins**: Implement `bevy::prelude::Plugin`
-- **States**: Use `init_state::<StateType>()` and `Res<State<StateType>>`
-- **Input Actions**: Use `#[derive(Actionlike)]` with leafwing-input-manager
+- **Components**: Use `#[derive(Component, Reflect)]` on structs; always add `#[component]` for reflect-based serializable components
+- **Marker Components**: Empty structs like `PlayerMarker`, `CameraMarker` for tagging entities (no data, just identity)
+- **Systems**: Functions taking system params. All game logic lives in systems, not in plugins
+- **Plugins**: Implement `bevy::prelude::Plugin` to group related setup and systems
+- **States**: Use `init_state::<GameState>()` in plugins; `#[derive(States)]` on enums for state transitions
+- **Input Actions**: Use `#[derive(Actionlike)]` + `InputManagerPlugin` + `ActionState<T>` component on entities
+
+### Custom Physics Gotchas (CRITICAL)
+
+This project uses a **custom physics system**, NOT avian3d's built-in simulation:
+
+- Uses avian3d for `Collider`, `RigidBody`, `SpatialQuery`, `MoveAndSlide` — but NOT RigidBody dynamics
+- Entities have `Collider::sphere/cuboid(...)` and `CustomPositionIntegration` (not default integration)
+- Physics is manually calculated in `physics/systems.rs`: `apply_forces` → `accumulate_forces` → `resolve_collisions`
+- Key types: `PhysicsVelocity`, `ForceApplier`, `GroundState`, `Contacts`, `PhysicsConfig`
+- To add player movement: Query `ForceApplier` and `GroundState`, call `force_app.add_force()` or `.add_impulse()`
+- Drag calculation uses quadratic velocity scaling in `accumulate_forces`: `force -= vel_dir * drag * speed * speed`
+- Ground detection uses `spatial_query.cast_shape()` with sphere collider facing down, NOT collision events
 
 ### Error Handling
 
@@ -101,22 +115,35 @@ cargo fmt -- --check  # Check formatting without changes
 
 ### Physics (avian3d)
 
-- Add physics components: `Collider`, `RigidBody`, `Velocity`, `ExternalForce`
-- Use `PhysicsPlugins::default()` to initialize
+- Add physics components: `Collider`, `RigidBody`, `PhysicsVelocity` (custom, NOT avian's Velocity)
+- Use `PhysicsPlugins::default()` to initialize (registers spatial queries)
 - Query physics components with proper Bevy patterns
+- Useavian3d prelude for: `Collider`, `RigidBody`, `SpatialQuery`, `ShapeCastConfig`, `SpatialQueryFilter`, `CustomPositionIntegration`, `MoveAndSlide`
 
 ### Entity Component System (ECS)
 
-- Components: Data containers (derive `Component`, `Reflect`)
-- Systems: Logic that queries and manipulates components
-- Commands: Deferred entity operations via `Commands` param
-- Resources: Single-instance data via `Res<T>`, `ResMut<T>`
+- **Components**: Data containers. Use `#[derive(Component, Reflect)]` for data, empty structs for markers
+- **Marker Components**: Empty structs tag entities: `PlayerMarker`, `CameraMarker`, `GameWorldSpawned` (marker for "has this been spawned yet")
+- **Custom Physics Components**: `PhysicsVelocity`, `ForceApplier`, `GroundState`, `Contacts` — these replace avian's built-in physics
+- **Systems**: All game logic lives here. Take system params in specific order for scheduling
+- **Commands**: Deferred entity operations via `Commands` param
+- **Resources**: Single-instance data via `Res<T>`, `ResMut<T>` (e.g., `State<GameState>`)
 
 ### Game State Management
 
-- Define states with `derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect, States)`
-- Common states: `MainMenu`, `Playing`, `Paused`, `GameOver`
-- Transition with `next_state.set(StateName)`
+- Define states with `#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect, States)]`
+- States: `MainMenu`, `Playing`, `Paused`
+- Use `is_running()` from `crate::game::setup` or `crate::game::states` for `.run_if()` conditions
+- **GOTCHA**: Two `is_running()` functions exist — `game/setup/functions.rs` and `game/states.rs`. Use either; both do same check.
+
+### Input System (leafwing-input-manager)
+
+- Define actions with `#[derive(Actionlike)]`: `PlayerAction`, `CameraAction`, `GlobalAction`
+- Action enums can have `#[actionlike(DualAxis)]` for analog input (returns `Vec2`)
+- Each action has `impl PlayerAction { pub fn input_map() -> InputMap<Self> }` that creates `InputMap::default()`
+- Add input map to entities: `player_cmd.insert(PlayerAction::input_map())`
+- Add action state component: `player_cmd.insert(ActionState::<PlayerAction>::default())`
+- Query in systems: `Query<&ActionState<PlayerAction>>`
 
 ### Performance
 
@@ -135,24 +162,72 @@ cargo fmt -- --check  # Check formatting without changes
 
 ### Adding a New Plugin
 
-1. Create `src/game/<feature>/mod.rs` with `pub struct FeaturePlugin; impl Plugin`
-2. Add to `GamePlugin::build()` in `src/game/plugin.rs`
+1. Create `src/game/<feature>/mod.rs` with:
+   ```rust
+   pub struct FeaturePlugin;
+   impl Plugin for FeaturePlugin { fn build(&self, app: &mut App) { ... } }
+   ```
+2. Export in `src/game/mod.rs`: `pub mod <feature>; pub use <feature>::FeaturePlugin;`
+3. Add to `GamePlugin::build()` in `src/game/plugin.rs`: `app.add_plugins((..., FeaturePlugin))`
 
 ### Adding a Component
 
-1. Create/edit component file in `src/game/<feature>/components.rs`
-2. Use `#[derive(Component, Reflect)]` and `#[component]`
+1. Create/edit `src/game/<feature>/components.rs`
+2. Use `#[derive(Component, Reflect)]` for data or empty struct for marker
 3. Add to relevant queries in systems
 
 ### Adding a System
 
-1. Add to appropriate module in `src/game/<feature>/systems.rs`
-2. Register in plugin with `app.add_systems(Schedule, system_name)`
+1. Add to `src/game/<feature>/systems.rs`
+2. Register in plugin: `app.add_systems(Schedule, system_name)`
+3. Add `.run_if(is_running)` to run only when `GameState::Playing`
 
-### Modifying Input
+### Adding Input Actions
 
-1. Edit enums in `src/game/input/actions.rs`
-2. Update `input_map()` with new bindings
+1. Edit or add enum in `src/game/input/actions.rs`:
+   ```rust
+   #[derive(Actionlike, Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
+   pub enum NewAction { Jump, Move }
+   impl NewAction {
+       pub fn input_map() -> InputMap<Self> { ... }
+   }
+   ```
+2. Insert on entity: `entity.insert(NewAction::input_map()); entity.insert(ActionState::<NewAction>::default());`
+3. Query: `Query<&ActionState<NewAction>>` or `Query<(Entity, &ActionState<NewAction>)>`
+
+### Adding Custom Physics Movement
+
+1. Query `(With<Foo>, &mut ForceApplier, &GroundState, &PhysicsVelocity)`
+2. Call `force_app.add_force(vector * speed)` or `.add_impulse(vector * impulse)`
+3. Forces are accumulated in `PreUpdate`, applied in `Update`, resolved in `PostUpdate`
+
+## Project Architecture
+
+### Core Flow
+
+1. `main.rs` → creates `App` → adds `GamePlugin`
+2. `GamePlugin` registers all sub-plugins: `PhysicsPlugin`, `InputPlugin`, `PlayerPlugin`, `CameraPlugin`, `GrapplePlugin`, `UIPlugin`
+3. On state `Playing` enter: `setup_playground` spawns player, camera, ground, walls, stairs, ramps, light
+4. Player input system reads `ActionState<PlayerAction>` component, applies forces via `ForceApplier`
+5. Physics systems: forces accumulate → collisions resolve → positions update
+
+### Plugin Dependencies
+
+- `PhysicsPlugin` must init before any physics-using plugin (adds `PhysicsPlugins::default()`)
+- `InputPlugin` must init before `PlayerPlugin` (user input required for movement)
+- All plugins use `.run_if(is_running)` (only active in `Playing` state)
+
+### Game State Transitions
+
+- `MainMenu` → (start) → `Playing` → (escape/pause) → `Paused` → (unpause) → `Playing`
+- UI systems handle state transitions via button callbacks
+
+## UI Library
+
+- Uses `univis_ui` (NOT Bevy's built-in UI system)
+- Register with: `app.add_plugins(univis_ui::prelude::UnivisUiPlugin)`
+- UI elements live in `src/game/ui/` (main_menu.rs, pause_menu.rs)
+- State transitions triggered by UI callbacks
 
 ## IDE Setup
 
@@ -165,73 +240,3 @@ VSCode with rust-analyzer is configured (`.vscode/settings.json`):
 Windows linker uses LLD (`.cargo/config.toml`):
 - Debug symbols enabled for development
 - Use `--release` for optimized builds
-
-## Communication Style
-
----
-name: caveman
-description: >
-  Ultra-compressed communication mode. Cuts token usage ~75% by speaking like caveman
-  while keeping full technical accuracy. Supports intensity levels: lite, full (default), ultra,
-  wenyan-lite, wenyan-full, wenyan-ultra.
-  Use when user says "caveman mode", "talk like caveman", "use caveman", "less tokens",
-  "be brief", or invokes /caveman. Also auto-triggers when token efficiency is requested.
----
-
-Respond terse like smart caveman. All technical substance stay. Only fluff die.
-
-## Persistence
-
-ACTIVE EVERY RESPONSE. No revert after many turns. No filler drift. Still active if unsure. Off only: "stop caveman" / "normal mode".
-
-Default: **full**. Switch: `/caveman lite|full|ultra`.
-
-## Rules
-
-Drop: articles (a/an/the), filler (just/really/basically/actually/simply), pleasantries (sure/certainly/of course/happy to), hedging. Fragments OK. Short synonyms (big not extensive, fix not "implement a solution for"). Technical terms exact. Code blocks unchanged. Errors quoted exact.
-
-Pattern: `[thing] [action] [reason]. [next step].`
-
-Not: "Sure! I'd be happy to help you with that. The issue you're experiencing is likely caused by..."
-Yes: "Bug in auth middleware. Token expiry check use `<` not `<=`. Fix:"
-
-## Intensity
-
-| Level | What change |
-|-------|------------|
-| **lite** | No filler/hedging. Keep articles + full sentences. Professional but tight |
-| **full** | Drop articles, fragments OK, short synonyms. Classic caveman |
-| **ultra** | Abbreviate (DB/auth/config/req/res/fn/impl), strip conjunctions, arrows for causality (X → Y), one word when one word enough |
-| **wenyan-lite** | Semi-classical. Drop filler/hedging but keep grammar structure, classical register |
-| **wenyan-full** | Maximum classical terseness. Fully 文言文. 80-90% character reduction. Classical sentence patterns, verbs precede objects, subjects often omitted, classical particles (之/乃/為/其) |
-| **wenyan-ultra** | Extreme abbreviation while keeping classical Chinese feel. Maximum compression, ultra terse |
-
-Example — "Why React component re-render?"
-- lite: "Your component re-renders because you create a new object reference each render. Wrap it in `useMemo`."
-- full: "New object ref each render. Inline object prop = new ref = re-render. Wrap in `useMemo`."
-- ultra: "Inline obj prop → new ref → re-render. `useMemo`."
-- wenyan-lite: "組件頻重繪，以每繪新生對象參照故。以 useMemo 包之。"
-- wenyan-full: "物出新參照，致重繪。useMemo .Wrap之。"
-- wenyan-ultra: "新參照→重繪。useMemo Wrap。"
-
-Example — "Explain database connection pooling."
-- lite: "Connection pooling reuses open connections instead of creating new ones per request. Avoids repeated handshake overhead."
-- full: "Pool reuse open DB connections. No new connection per request. Skip handshake overhead."
-- ultra: "Pool = reuse DB conn. Skip handshake → fast under load."
-- wenyan-full: "池reuse open connection。不每req新開。skip handshake overhead。"
-- wenyan-ultra: "池reuse conn。skip handshake → fast。"
-
-## Auto-Clarity
-
-Drop caveman for: security warnings, irreversible action confirmations, multi-step sequences where fragment order risks misread, user asks to clarify or repeats question. Resume caveman after clear part done.
-
-Example — destructive op:
-> **Warning:** This will permanently delete all rows in the `users` table and cannot be undone.
-> ```sql
-> DROP TABLE users;
-> ```
-> Caveman resume. Verify backup exist first.
-
-## Boundaries
-
-Code/commits/PRs: write normal. "stop caveman" or "normal mode": revert. Level persist until changed or session end.
