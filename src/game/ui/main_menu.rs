@@ -48,8 +48,12 @@ fn spawn_main_menu(mut commands: Commands) {
         });
 }
 
-fn despawn_main_menu(mut commands: Commands, query: Query<Entity, With<MainMenuRoot>>) {
-    if let Ok(entity) = query.single() {
+
+fn despawn_main_menu(mut commands: Commands, menu_query: Query<Entity, With<MainMenuRoot>>, cam_query: Query<Entity, With<Camera2d>>) {
+    if let Ok(entity) = menu_query.single() {
         commands.entity(entity).despawn();
+    }
+    if let Ok(camera_entity) = cam_query.single() {
+        commands.entity(camera_entity).despawn();
     }
 }
