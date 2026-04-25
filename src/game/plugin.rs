@@ -1,5 +1,5 @@
 use crate::game::{
-    setup_playground, CameraPlugin, GameState, GrapplePlugin, InputPlugin, PhysicsPlugin,
+    setup_playground, CameraPlugin, GameState, InputPlugin, PhysicsPlugin,
     PlayerPlugin, UIPlugin,
 };
 use crate::prelude::*;
@@ -20,7 +20,6 @@ impl Plugin for GamePlugin {
             InputPlugin,
             PlayerPlugin,
             CameraPlugin,
-            GrapplePlugin,
             UIPlugin,
         ));
         app.init_state::<GameState>();

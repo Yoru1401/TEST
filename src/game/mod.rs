@@ -1,5 +1,4 @@
 pub mod camera;
-pub mod grapple;
 pub mod input;
 pub mod physics;
 pub mod player;
@@ -9,7 +8,6 @@ pub mod states;
 pub mod ui;
 
 pub use camera::{CameraMarker, CameraPlugin};
-pub use grapple::{GrappleCooldown, GrapplePlugin, GrappleProjectile, SwingState};
 pub use input::{CameraAction, GlobalAction, InputPlugin, PlayerAction};
 pub use physics::{accumulate_forces, apply_forces, detect_ground, resolve_collisions};
 pub use physics::{
