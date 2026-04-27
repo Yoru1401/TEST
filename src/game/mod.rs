@@ -16,7 +16,6 @@ pub use physics::{
 };
 pub use player::{PlayerMarker, PlayerPlugin};
 pub use plugin::GamePlugin;
-pub use setup::{is_running, setup_playground, GameWorldSpawned};
+pub use setup::{setup_playground, GameWorldSpawned};
 pub use states::GameState;
-pub use ui::systems::{spawn_button, spawn_label, spawn_small_label, spawn_ui_screen};
-pub use ui::{MainMenuPlugin, MainMenuRoot, PauseMenuPlugin, PauseMenuRoot, UIPlugin};
+pub use ui::UIPlugin;

@@ -8,16 +8,19 @@ impl Plugin for PhysicsPlugin {
         app.add_plugins(avian3d::prelude::PhysicsPlugins::default());
         app.add_systems(
             PreUpdate,
-            detect_ground.run_if(crate::game::setup::is_running),
+            detect_ground.run_if(in_state(crate::game::states::GameState::Playing)),
         );
-        app.add_systems(Update, apply_forces.run_if(crate::game::setup::is_running));
         app.add_systems(
             Update,
-            accumulate_forces.run_if(crate::game::setup::is_running),
+            apply_forces.run_if(in_state(crate::game::states::GameState::Playing)),
+        );
+        app.add_systems(
+            Update,
+            accumulate_forces.run_if(in_state(crate::game::states::GameState::Playing)),
         );
         app.add_systems(
             PostUpdate,
-            resolve_collisions.run_if(crate::game::setup::is_running),
+            resolve_collisions.run_if(in_state(crate::game::states::GameState::Playing)),
         );
     }
 }

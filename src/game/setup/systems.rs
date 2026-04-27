@@ -37,7 +37,7 @@ pub fn setup_playground(
     player_cmd.insert(ActionState::<crate::game::GlobalAction>::default());
 
     commands.spawn((
-        Name::new("Camera"),
+        Name::new("GameCamera"),
         crate::game::CameraMarker,
         GameWorldSpawned,
         crate::game::CameraAction::input_map(),
@@ -111,8 +111,4 @@ pub fn setup_playground(
         },
         Transform::from_xyz(10.0, 20.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
-}
-
-pub fn is_running(res: Res<State<crate::game::GameState>>) -> bool {
-    res.get() == &crate::game::GameState::Playing
 }

@@ -1,3 +1,3 @@
-pub mod functions;
+pub mod systems;
 
-pub use functions::{is_running, setup_playground, GameWorldSpawned};
+pub use systems::{ setup_playground, GameWorldSpawned};
