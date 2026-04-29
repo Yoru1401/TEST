@@ -1,5 +1,6 @@
 pub mod components;
+pub mod plugins;
 pub mod systems;
 
 pub use components::PlayerMarker;
-pub use systems::PlayerPlugin;
+pub use plugins::PlayerPlugin;

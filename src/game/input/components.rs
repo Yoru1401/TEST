@@ -14,7 +14,7 @@ impl PlayerAction {
         map.insert(Self::Jump, KeyCode::Space);
         map.insert(Self::Jump, GamepadButton::South);
         map.insert_dual_axis(Self::Move, VirtualDPad::wasd());
-        map.insert_dual_axis(Self::Move, GamepadStick::LEFT);
+        map.insert_dual_axis(Self::Move, GamepadStick::LEFT.with_circle_deadzone(0.1));
         map
     }
 }

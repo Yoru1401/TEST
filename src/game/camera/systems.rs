@@ -7,18 +7,7 @@ const CAM_HEIGHT: f32 = 2.0;
 const LOOK_SENSITIVITY: f32 = 3.0;
 const CAM_COLLISION_RADIUS: f32 = 0.3;
 
-pub struct CameraPlugin;
-
-impl Plugin for CameraPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            update_camera.run_if(crate::game::states::is_running),
-        );
-    }
-}
-
-fn update_camera(
+pub fn update_camera(
     time: Res<Time>,
     player: Query<(Entity, &Transform), With<crate::game::player::PlayerMarker>>,
     mut camera: Query<

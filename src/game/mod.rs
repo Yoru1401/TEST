@@ -18,4 +18,6 @@ pub use player::{PlayerMarker, PlayerPlugin};
 pub use plugin::GamePlugin;
 pub use setup::{setup_playground, GameWorldSpawned};
 pub use states::GameState;
-pub use ui::UIPlugin;
+pub use ui::plugins::UIPlugin;
+pub use ui::components::ButtonColors;
+pub use ui::components::MenuButton;
