@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 
-
 #[derive(Component, Copy, Clone, Default)]
 pub struct PhysicsConfig {
     pub gravity: f32,

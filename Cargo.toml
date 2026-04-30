@@ -8,7 +8,7 @@ debug = ["bevy/debug"]
 
 [dependencies]
 bevy = { version = "0.18", features = ["bevy_core_pipeline"] }
-avian3d = "0.6"
+bevy_rapier3d = "0.33"
 serde = { version = "1", features = ["derive"] }
 log = { version = "0.4", features = ["max_level_debug", "release_max_level_warn"] }
 fastrand = "2.1"
@@ -20,7 +20,6 @@ leafwing_abilities = "0.12.0"
 debug = 0
 strip = "debuginfo"
 opt-level = 1
-features = ["debug"]
 
 [profile.dev.package."*"]
 opt-level = 3

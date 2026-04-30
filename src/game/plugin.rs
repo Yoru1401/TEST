@@ -1,8 +1,7 @@
 use crate::game::{
-    setup_playground, CameraPlugin, GameState, InputPlugin, PhysicsPlugin,
-    PlayerPlugin, UIPlugin,
+    setup_playground, CameraPlugin, GameState, InputPlugin, PhysicsPlugin, PlayerPlugin, UIPlugin,
 };
-use crate::prelude::*;
+use bevy::prelude::*;
 
 pub struct GamePlugin;
 

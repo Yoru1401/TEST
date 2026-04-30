@@ -1,5 +1,5 @@
-use avian3d::prelude::*;
 use bevy::prelude::*;
+use bevy_rapier3d::{prelude::*, rapier::prelude::Ball};
 use leafwing_input_manager::prelude::*;
 
 const CAM_DIST: f32 = 10.0;
@@ -20,7 +20,7 @@ pub fn update_camera(
             Without<crate::game::player::PlayerMarker>,
         ),
     >,
-    spatial: SpatialQuery,
+    rapier_context: ReadRapierContext,
     mut yaw: Local<f32>,
     mut pitch: Local<f32>,
 ) {
@@ -47,22 +47,28 @@ pub fn update_camera(
     let ray_dist = ray_dir.length();
 
     if ray_dist > 0.0 {
-        let filter = SpatialQueryFilter::from_excluded_entities([player_entity]);
+        let filter = QueryFilter::default().exclude_collider(player_entity);
         let dir_normalized = ray_dir / ray_dist;
-        let dir3 = Dir3::new(dir_normalized).unwrap_or(Dir3::Y);
+        let shape_vel = dir_normalized * ray_dist;
+        let cam_collider = Ball::new(CAM_COLLISION_RADIUS);
+        let options = ShapeCastOptions {
+            max_time_of_impact: 1.0,
+            target_distance: 0.0,
+            stop_at_penetration: false,
+            compute_impact_geometry_on_penetration: false,
+        };
 
-        if let Some(hit) = spatial.cast_shape(
-            &Collider::sphere(CAM_COLLISION_RADIUS),
+        let context = rapier_context.single().unwrap();
+
+        if let Some((_, hit)) = context.cast_shape(
             player_transform.translation,
             Quat::IDENTITY,
-            dir3,
-            &ShapeCastConfig {
-                max_distance: ray_dist,
-                ..default()
-            },
-            &filter,
+            shape_vel,
+            &cam_collider,
+            options,
+            filter,
         ) {
-            let safe_dist = (hit.distance - CAM_COLLISION_RADIUS).max(1.0);
+            let safe_dist = (hit.time_of_impact * ray_dist - CAM_COLLISION_RADIUS).max(1.0);
             cam_transform.translation = player_transform.translation + dir_normalized * safe_dist;
         } else {
             cam_transform.translation = desired_pos;

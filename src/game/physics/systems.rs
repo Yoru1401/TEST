@@ -1,31 +1,38 @@
-use avian3d::prelude::*;
 use bevy::prelude::*;
+use bevy_rapier3d::prelude::*;
+
+pub struct DepenetrationConfig {
+    pub depenetration_iterations: usize,
+    pub max_depenetration_error: f32,
+    pub penetration_rejection_threshold: f32,
+    pub skin_width: f32,
+}
+
+impl Default for DepenetrationConfig {
+    fn default() -> Self {
+        Self {
+            depenetration_iterations: 16,
+            max_depenetration_error: 0.0001,
+            penetration_rejection_threshold: 0.5,
+            skin_width: 0.01,
+        }
+    }
+}
 
 pub struct PhysicsPlugin;
 
 impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(avian3d::prelude::PhysicsPlugins::default());
-        app.add_systems(
-            PreUpdate,
-            detect_ground.run_if(in_state(crate::game::states::GameState::Playing)),
-        );
+        app.add_plugins(RapierPhysicsPlugin::<NoUserData>::default());
+        app.add_plugins(RapierDebugRenderPlugin::default());
         app.add_systems(
             Update,
-            apply_forces.run_if(in_state(crate::game::states::GameState::Playing)),
-        );
-        app.add_systems(
-            Update,
-            accumulate_forces.run_if(in_state(crate::game::states::GameState::Playing)),
-        );
-        app.add_systems(
-            PostUpdate,
-            resolve_collisions.run_if(in_state(crate::game::states::GameState::Playing)),
+            (accumulate_forces, apply_forces, resolve_collisions)
+                .chain()
+                .run_if(in_state(crate::game::states::GameState::Playing)),
         );
     }
 }
-
-pub const SKIN_WIDTH: f32 = 0.01;
 
 pub fn apply_forces(
     time: Res<Time>,
@@ -40,7 +47,6 @@ pub fn apply_forces(
     }
 }
 
-#[allow(clippy::type_complexity)]
 pub fn accumulate_forces(
     transforms: Query<&Transform>,
     mut bodies: Query<
@@ -95,120 +101,93 @@ pub fn accumulate_forces(
     }
 }
 
-pub fn detect_ground(
-    spatial_query: SpatialQuery,
-    transforms: Query<&Transform>,
-    mut bodies: Query<
-        (Entity, &mut crate::game::physics::GroundState),
-        With<crate::game::physics::PhysicsVelocity>,
-    >,
-) {
-    for (entity, mut ground_state) in &mut bodies {
-        let Ok(transform) = transforms.get(entity) else {
-            continue;
-        };
-        let filter = SpatialQueryFilter::from_excluded_entities([entity]);
-        let hit = spatial_query.cast_shape(
-            &Collider::sphere(0.5),
-            transform.translation,
-            Quat::IDENTITY,
-            Dir3::NEG_Y,
-            &ShapeCastConfig {
-                max_distance: 0.1,
-                ..default()
-            },
-            &filter,
-        );
-        ground_state.is_grounded = hit.is_some();
-        if let Some(hit_data) = hit {
-            ground_state.ground_normal = hit_data.normal1;
-        }
-    }
-}
-
 pub fn resolve_collisions(
     time: Res<Time>,
-    spatial_query: SpatialQuery,
-    move_and_slide: MoveAndSlide,
+    context: ReadRapierContext,
     materials: Query<&crate::game::physics::PhysicsMaterial>,
-    mut bodies: Query<
-        (
-            Entity,
-            &mut crate::game::physics::PhysicsVelocity,
-            &crate::game::physics::PhysicsConfig,
-            &mut crate::game::physics::Contacts,
-            &mut Transform,
-        ),
-        With<crate::game::physics::PhysicsVelocity>,
-    >,
+    mut bodies: Query<(
+        Entity,
+        &mut crate::game::physics::PhysicsVelocity,
+        &crate::game::physics::PhysicsConfig,
+        &mut crate::game::physics::Contacts,
+        &mut Transform,
+        &Collider,
+    )>,
 ) {
+    let context = context.single().unwrap();
     let dt = time.delta_secs();
-    let move_config = MoveAndSlideConfig::default();
-    for (entity, mut vel, config, mut contacts, mut transform) in &mut bodies {
+    let move_and_slide_iterations = 4;
+    let depenetration_config = DepenetrationConfig::default();
+
+    for (entity, mut vel, physics_config, mut contacts, mut transform, collider) in &mut bodies {
         contacts.clear();
-        let filter = SpatialQueryFilter::from_excluded_entities([entity]);
-        let depen_offset = move_and_slide.depenetrate(
-            &Collider::sphere(0.5),
-            transform.translation,
-            Quat::IDENTITY,
-            &(&move_config).into(),
-            &filter,
-        );
-        transform.translation += depen_offset;
+        let filter = QueryFilter::default().exclude_collider(entity);
+
         let mut velocity = vel.linear;
         let mut position = transform.translation;
         let mut time_left = dt;
-        for _ in 0..move_config.move_and_slide_iterations {
+
+        for _ in 0..move_and_slide_iterations {
             let sweep = time_left * velocity;
             let length = sweep.length();
             if length < 1e-4 {
                 break;
             }
-            let vel_dir = match Dir3::new(sweep / length) {
-                Ok(dir) => dir,
+
+            let dir = match Dir3::new(sweep) {
+                Ok(d) => d,
                 Err(_) => break,
             };
-            let hit = spatial_query.cast_shape(
-                &Collider::sphere(0.5),
+
+            let options = ShapeCastOptions {
+                max_time_of_impact: length,
+                target_distance: depenetration_config.skin_width,
+                stop_at_penetration: false,
+                compute_impact_geometry_on_penetration: true,
+            };
+
+            let Some((hit_entity, hit)) = context.cast_shape(
                 position,
                 Quat::IDENTITY,
-                vel_dir,
-                &ShapeCastConfig {
-                    max_distance: length,
-                    ..default()
-                },
-                &filter,
-            );
-            let Some(sweep_hit) = hit else {
+                *dir,
+                collider.into(),
+                options,
+                filter,
+            ) else {
                 position += sweep;
                 break;
             };
-            let fraction = sweep_hit.distance / length;
-            position += *vel_dir * (sweep_hit.distance - SKIN_WIDTH).max(0.0);
-            time_left *= 1.0 - fraction;
-            let hit_entity = sweep_hit.entity;
-            let hit_normal: Vec3 = sweep_hit.normal1;
-            let hit_point = sweep_hit.point2;
+            let toi = hit.time_of_impact / length;
+            position += *dir * hit.time_of_impact;
+            time_left *= 1.0 - toi;
+
+            let hit_normal = hit.details.map_or(Vec3::Y, |d| d.normal1);
+            let hit_point = hit.details.map_or(position, |d| d.witness2);
             contacts.add(hit_entity, hit_normal, hit_point);
+
             let velocity_along_normal = velocity.dot(hit_normal);
             if velocity_along_normal < 0.0 {
                 let normal_part = velocity_along_normal * hit_normal;
                 let tangent_part = velocity - normal_part;
-                let material_restitution = materials.get(hit_entity).map_or(0.0, |m| m.restitution);
-                let material_friction = materials.get(hit_entity).map_or(0.0, |m| m.friction);
-                velocity -= normal_part * (1.0 - material_restitution);
+                let restitution = materials.get(hit_entity).map_or(0.0, |m| m.restitution);
+                let friction = materials.get(hit_entity).map_or(0.0, |m| m.friction);
+
+                velocity -= normal_part * (1.0 + restitution);
                 let tangent_speed = tangent_part.length();
-                if tangent_speed > 0.5 {
-                    velocity -= tangent_part * material_friction;
+                if tangent_speed > 1e-3 {
+                    velocity -= tangent_part * (friction * (tangent_speed / (tangent_speed + 1.0)));
                 }
-                let r: Vec3 = hit_point - position;
+
+                let r = hit_point - position;
                 let torque = r.cross(normal_part * velocity_along_normal);
-                vel.angular += torque * config.torsion * dt;
+                vel.angular += torque * physics_config.torsion * dt;
             }
+
             if time_left < 1e-6 {
                 break;
             }
         }
+
         transform.translation = position;
         vel.linear = velocity;
     }

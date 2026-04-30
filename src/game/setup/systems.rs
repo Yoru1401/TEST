@@ -1,4 +1,6 @@
-use crate::prelude::*;
+use bevy::prelude::*;
+use bevy_rapier3d::prelude::*;
+use leafwing_input_manager::prelude::ActionState;
 
 #[derive(Component)]
 pub struct GameWorldSpawned;
@@ -13,23 +15,22 @@ pub fn setup_playground(
         return;
     }
 
-    let concrete = crate::game::PhysicsMaterial::concrete();
+    let concrete = crate::game::physics::PhysicsMaterial::concrete();
 
     let mut player_cmd = commands.spawn((
         Name::new("Player"),
         crate::game::PlayerMarker,
         GameWorldSpawned,
-        RigidBody::Kinematic,
-        Collider::sphere(0.5),
-        CustomPositionIntegration,
+        RigidBody::KinematicPositionBased,
+        Collider::ball(0.5),
         Mesh3d(meshes.add(Sphere::new(0.5))),
         MeshMaterial3d(materials.add(StandardMaterial::from_color(Color::srgb(0.9, 0.2, 0.2)))),
         Transform::from_xyz(12.0, 20.0, 8.0),
-        crate::game::PhysicsConfig::player(),
-        crate::game::PhysicsVelocity::default(),
-        crate::game::GroundState::default(),
-        crate::game::ForceApplier::default(),
-        crate::game::Contacts::default(),
+        crate::game::physics::PhysicsConfig::player(),
+        crate::game::physics::PhysicsVelocity::default(),
+        crate::game::physics::GroundState::default(),
+        crate::game::physics::ForceApplier::default(),
+        crate::game::physics::Contacts::default(),
     ));
     player_cmd.insert(crate::game::PlayerAction::input_map());
     player_cmd.insert(crate::game::GlobalAction::input_map());
@@ -53,10 +54,10 @@ pub fn setup_playground(
     commands.spawn((
         Name::new("Ground"),
         GameWorldSpawned,
-        RigidBody::Static,
-        Collider::cuboid(50.0, 0.5, 50.0),
+        RigidBody::Fixed,
+        Collider::cuboid(250.0, 0.25, 250.0),
         concrete,
-        Mesh3d(meshes.add(Cuboid::new(50.0, 0.5, 50.0))),
+        Mesh3d(meshes.add(Cuboid::new(500.0, 0.5, 500.0))),
         MeshMaterial3d(ground_mat),
         Transform::from_xyz(0.0, -0.25, 0.0),
     ));
@@ -66,8 +67,8 @@ pub fn setup_playground(
         commands.spawn((
             Name::new(format!("ZoneA_Stair_Step{i}")),
             GameWorldSpawned,
-            RigidBody::Static,
-            Collider::cuboid(3.0, y, 3.0),
+            RigidBody::Fixed,
+            Collider::cuboid(1.5, y / 2.0, 1.5),
             concrete,
             Mesh3d(meshes.add(Cuboid::new(3.0, y, 3.0))),
             MeshMaterial3d(wall_mat.clone()),
@@ -81,8 +82,8 @@ pub fn setup_playground(
         commands.spawn((
             Name::new(format!("ZoneB_Ramp{i}")),
             GameWorldSpawned,
-            RigidBody::Static,
-            Collider::cuboid(3.0, 0.2, 8.0),
+            RigidBody::Fixed,
+            Collider::cuboid(1.5, 0.1, 4.0),
             concrete,
             Mesh3d(meshes.add(Cuboid::new(3.0, 0.2, 8.0))),
             MeshMaterial3d(ramp_mat.clone()),
@@ -94,8 +95,8 @@ pub fn setup_playground(
     commands.spawn((
         Name::new("ZoneC Wall"),
         GameWorldSpawned,
-        RigidBody::Static,
-        Collider::cuboid(0.1, 50.0, 50.0),
+        RigidBody::Fixed,
+        Collider::cuboid(0.05, 25.0, 25.0),
         concrete,
         Mesh3d(meshes.add(Cuboid::new(0.1, 50.0, 50.0))),
         MeshMaterial3d(wall_mat),
