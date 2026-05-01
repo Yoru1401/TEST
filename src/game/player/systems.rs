@@ -11,7 +11,7 @@ pub fn detect_ground(
         Entity,
         &Transform,
         &Collider,
-        &mut crate::game::physics::GroundState,
+        &mut crate::game::player::GroundState,
     )>,
 ) {
     let context = context.single().unwrap();
@@ -47,7 +47,7 @@ pub fn player_input(
     mut player: Query<
         (
             &mut crate::game::physics::ForceApplier,
-            &crate::game::physics::GroundState,
+            &crate::game::player::GroundState,
             &crate::game::physics::Contacts,
             &ActionState<crate::game::input::PlayerAction>,
         ),
@@ -71,8 +71,8 @@ pub fn player_input(
     if action.just_pressed(&crate::game::input::PlayerAction::Jump) {
         if ground_state.is_grounded {
             force_app.add_impulse(ground_state.ground_normal * JUMP_VELOCITY);
-        } else if !contacts.entities.is_empty() {
-            let jump_dir = (contacts.normals[0] + Vec3::Y * 0.3).normalize();
+        } else if !contacts.entries.is_empty() {
+            let jump_dir = (contacts.entries[0].1 + Vec3::Y * 0.3).normalize();
             force_app.add_impulse(jump_dir * JUMP_VELOCITY);
         }
     }

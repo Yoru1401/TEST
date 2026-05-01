@@ -1,23 +1,10 @@
 use bevy::prelude::*;
+use bevy_rapier3d::plugin::RapierPhysicsPlugin;
 use bevy_rapier3d::prelude::*;
 
-pub struct DepenetrationConfig {
-    pub depenetration_iterations: usize,
-    pub max_depenetration_error: f32,
-    pub penetration_rejection_threshold: f32,
-    pub skin_width: f32,
-}
+use crate::game::physics::components::*;
 
-impl Default for DepenetrationConfig {
-    fn default() -> Self {
-        Self {
-            depenetration_iterations: 16,
-            max_depenetration_error: 0.0001,
-            penetration_rejection_threshold: 0.5,
-            skin_width: 0.01,
-        }
-    }
-}
+pub const SKIN_WIDTH: f32 = 0.01;
 
 pub struct PhysicsPlugin;
 
@@ -25,170 +12,152 @@ impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(RapierPhysicsPlugin::<NoUserData>::default());
         app.add_plugins(RapierDebugRenderPlugin::default());
+
         app.add_systems(
             Update,
-            (accumulate_forces, apply_forces, resolve_collisions)
+            (accumulate_forces, apply_forces, collide_and_slide)
                 .chain()
                 .run_if(in_state(crate::game::states::GameState::Playing)),
         );
     }
 }
 
-pub fn apply_forces(
-    time: Res<Time>,
-    mut forces: Query<(
-        &mut crate::game::physics::ForceApplier,
-        &mut crate::game::physics::PhysicsVelocity,
-    )>,
+pub fn accumulate_forces(
+    mut bodies: Query<(Entity, &PhysicsVelocity, &PhysicsConfig, &mut ForceApplier)>,
 ) {
+    for (_entity, vel, config, mut force_app) in &mut bodies {
+        force_app.add_force(Vec3::NEG_Y * config.gravity);
+
+        let speed = vel.linear.length();
+        if speed > 0.001 {
+            let vel_dir = vel.linear / speed;
+            let drag = -vel_dir * config.drag * speed * speed;
+            force_app.add_force(drag);
+        }
+    }
+}
+
+pub fn apply_forces(time: Res<Time>, mut forces: Query<(&mut ForceApplier, &mut PhysicsVelocity)>) {
     let dt = time.delta_secs();
     for (mut force_app, mut vel) in &mut forces {
         force_app.apply_to(&mut vel, dt);
     }
 }
 
-pub fn accumulate_forces(
-    transforms: Query<&Transform>,
-    mut bodies: Query<
-        (
-            Entity,
-            &crate::game::physics::PhysicsVelocity,
-            &crate::game::physics::PhysicsConfig,
-            &mut crate::game::physics::ForceApplier,
-            Option<&crate::game::physics::TensionAnchor>,
-            Option<&crate::game::physics::SpringAnchor>,
-            Option<&crate::game::physics::GroundState>,
-        ),
-        With<crate::game::physics::PhysicsVelocity>,
-    >,
-) {
-    for (entity, vel, config, mut force_app, tension, spring, ground_state) in &mut bodies {
-        let control = ground_state.map_or(config.air_control, |g| {
-            if g.is_grounded {
-                config.ground_control
-            } else {
-                config.air_control
-            }
-        });
-        force_app.add_force(Vec3::NEG_Y * config.gravity * control);
-        if let Some(&crate::game::physics::TensionAnchor(anchor)) = tension {
-            if let (Ok(pos), Ok(anchor_pos)) = (transforms.get(entity), transforms.get(anchor)) {
-                let to_anchor = anchor_pos.translation - pos.translation;
-                let distance = to_anchor.length();
-                if distance > 0.001 {
-                    force_app.add_force((to_anchor / distance) * 15.0 * control);
-                }
-            }
-        }
-        if let Some(spring_comp) = spring {
-            if let (Ok(pos), Ok(target_pos)) =
-                (transforms.get(entity), transforms.get(spring_comp.target))
-            {
-                let to_target = target_pos.translation - pos.translation;
-                let distance = to_target.length();
-                if distance > 0.001 {
-                    let direction = to_target / distance;
-                    let extension = distance - spring_comp.rest_length;
-                    force_app.add_force(direction * spring_comp.stiffness * extension * control);
-                }
-            }
-        }
-        let speed = vel.linear.length();
-        if speed > 0.001 {
-            let vel_dir = vel.linear / speed;
-            force_app.add_force(-vel_dir * config.drag * speed * speed);
-        }
-    }
-}
-
-pub fn resolve_collisions(
+pub fn collide_and_slide(
     time: Res<Time>,
     context: ReadRapierContext,
-    materials: Query<&crate::game::physics::PhysicsMaterial>,
+    materials: Query<&PhysicsMaterial>,
     mut bodies: Query<(
         Entity,
-        &mut crate::game::physics::PhysicsVelocity,
-        &crate::game::physics::PhysicsConfig,
-        &mut crate::game::physics::Contacts,
+        &mut PhysicsVelocity,
+        &PhysicsConfig,
+        &mut Contacts,
         &mut Transform,
         &Collider,
     )>,
 ) {
     let context = context.single().unwrap();
     let dt = time.delta_secs();
-    let move_and_slide_iterations = 4;
-    let depenetration_config = DepenetrationConfig::default();
+    const SLIDE_ITER: usize = 4;
+    const BIAS_FACTOR: f32 = 0.12;
+    const MAX_BIAS: f32 = 0.006;
+    const MIN_SPEED: f32 = 1e-4;
 
-    for (entity, mut vel, physics_config, mut contacts, mut transform, collider) in &mut bodies {
+    for (entity, mut vel, cfg, mut contacts, mut transform, collider) in &mut bodies {
         contacts.clear();
         let filter = QueryFilter::default().exclude_collider(entity);
 
-        let mut velocity = vel.linear;
-        let mut position = transform.translation;
-        let mut time_left = dt;
+        let mut remaining = dt;
+        let mut pos = transform.translation;
+        let mut lin_vel = vel.linear;
 
-        for _ in 0..move_and_slide_iterations {
-            let sweep = time_left * velocity;
-            let length = sweep.length();
-            if length < 1e-4 {
+        for _ in 0..SLIDE_ITER {
+            let sweep = remaining * lin_vel;
+            let sweep_len = sweep.length();
+            if sweep_len < MIN_SPEED {
                 break;
             }
-
             let dir = match Dir3::new(sweep) {
                 Ok(d) => d,
                 Err(_) => break,
             };
 
-            let options = ShapeCastOptions {
-                max_time_of_impact: length,
-                target_distance: depenetration_config.skin_width,
+            let cast_opts = ShapeCastOptions {
+                max_time_of_impact: sweep_len,
+                target_distance: SKIN_WIDTH * 2.0,
                 stop_at_penetration: false,
                 compute_impact_geometry_on_penetration: true,
             };
 
-            let Some((hit_entity, hit)) = context.cast_shape(
-                position,
+            let Some((_hit_ent, hit)) = context.cast_shape(
+                pos,
                 Quat::IDENTITY,
                 *dir,
                 collider.into(),
-                options,
+                cast_opts,
                 filter,
             ) else {
-                position += sweep;
+                pos += sweep;
                 break;
             };
-            let toi = hit.time_of_impact / length;
-            position += *dir * hit.time_of_impact;
-            time_left *= 1.0 - toi;
 
-            let hit_normal = hit.details.map_or(Vec3::Y, |d| d.normal1);
-            let hit_point = hit.details.map_or(position, |d| d.witness2);
-            contacts.add(hit_entity, hit_normal, hit_point);
+            let impact_dist = hit.time_of_impact;
+            pos += *dir * impact_dist;
 
-            let velocity_along_normal = velocity.dot(hit_normal);
-            if velocity_along_normal < 0.0 {
-                let normal_part = velocity_along_normal * hit_normal;
-                let tangent_part = velocity - normal_part;
-                let restitution = materials.get(hit_entity).map_or(0.0, |m| m.restitution);
-                let friction = materials.get(hit_entity).map_or(0.0, |m| m.friction);
+            let normal = hit.details.map_or(Vec3::ZERO, |d| d.normal1).normalize();
 
-                velocity -= normal_part * (1.0 + restitution);
-                let tangent_speed = tangent_part.length();
-                if tangent_speed > 1e-3 {
-                    velocity -= tangent_part * (friction * (tangent_speed / (tangent_speed + 1.0)));
-                }
+            let point = hit.details.map_or(pos, |d| d.witness2);
+            contacts.add(_hit_ent, normal, point);
 
-                let r = hit_point - position;
-                let torque = r.cross(normal_part * velocity_along_normal);
-                vel.angular += torque * physics_config.torsion * dt;
+            let toi = (impact_dist / sweep_len).min(0.9);
+            remaining *= 1.0 - toi;
+
+            let vel_n = lin_vel.dot(normal);
+            let mut impulse_n: f32 = 0.0;
+            if vel_n < 0.0 {
+                let restitution = materials.get(_hit_ent).map_or(0.001, |m| m.restitution);
+                impulse_n = -(1.0 + restitution) * vel_n;
+                let impulse_vec = impulse_n * normal;
+
+                lin_vel += impulse_vec;
+
+                let r = point - pos;
+                let torque = r.cross(impulse_vec);
+                vel.angular += torque * cfg.torsion * dt;
             }
 
-            if time_left < 1e-6 {
+            let vel_t = lin_vel - normal * lin_vel.dot(normal);
+            let speed_t = vel_t.length();
+
+            if speed_t > 1e-3 {
+                let friction = materials.get(_hit_ent).map_or(0.0, |m| m.friction);
+
+                let max_f = impulse_n * friction;
+                let tangent = vel_t.normalize_or_zero();
+                let impulse_t = -speed_t.min(max_f).max(-max_f) * tangent;
+
+                lin_vel += impulse_t;
+
+                let r = point - pos;
+                let torque = r.cross(impulse_t);
+                vel.angular += torque * cfg.torsion * dt;
+            }
+
+            let penetration = (point - pos).dot(normal);
+            if penetration < 0.0 {
+                let mut bias = -penetration * BIAS_FACTOR;
+                if bias > MAX_BIAS {
+                    bias = MAX_BIAS;
+                }
+                pos += bias * normal;
+            }
+
+            if remaining < 1e-6 {
                 break;
             }
         }
-
-        transform.translation = position;
-        vel.linear = velocity;
+        transform.translation = pos;
+        vel.linear = lin_vel;
     }
 }
